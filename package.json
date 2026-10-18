@@ -1,0 +1,9 @@
+{
+  "name": "baku-apartment-prices",
+  "private": true,
+  "type": "module",
+  "description": "Vercel front end for the Baku apartment price tracker: static dashboard plus /api/data served from Neon.",
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2"
+  }
+}

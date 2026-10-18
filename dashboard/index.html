@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baku apartment prices</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏢</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  color-scheme: light;
+  --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --bg:#EEF2F3; --surface:#FFFFFF; --surface-2:#F5F8F8; --ink:#102028; --ink-2:#4A5D66; --line:#D5DEE1;
+  --accent:#0F6E7A; --accent-soft:rgba(15,110,122,.14); --sand:#A87A3E; --new:#2B8C99;
+  --up:#B4441F; --down:#1F7A4D; --warn-bg:#FFF4DC; --warn-ink:#6B4A07;
+  --c1:#0F6E7A; --c2:#A87A3E; --c3:#5B5FC7; --c4:#B4441F; --c5:#2E8B57; --c6:#8A4F9E; --c7:#C28A00; --c8:#4A5D66;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#0C171C; --surface:#13232A; --surface-2:#182C34; --ink:#E3ECEE; --ink-2:#93A7AE; --line:#24393F;
+    --accent:#4FB7C2; --accent-soft:rgba(79,183,194,.16); --sand:#D6A867; --new:#7FD0D8;
+    --up:#EE8661; --down:#55C58F; --warn-bg:#3A2E10; --warn-ink:#F4D58A;
+    --c1:#4FB7C2; --c2:#D6A867; --c3:#9EA2F2; --c4:#EE8661; --c5:#6CCB94; --c6:#C79AD8; --c7:#E8C04F; --c8:#93A7AE;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#0C171C; --surface:#13232A; --surface-2:#182C34; --ink:#E3ECEE; --ink-2:#93A7AE; --line:#24393F;
+  --accent:#4FB7C2; --accent-soft:rgba(79,183,194,.16); --sand:#D6A867; --new:#7FD0D8;
+  --up:#EE8661; --down:#55C58F; --warn-bg:#3A2E10; --warn-ink:#F4D58A;
+  --c1:#4FB7C2; --c2:#D6A867; --c3:#9EA2F2; --c4:#EE8661; --c5:#6CCB94; --c6:#C79AD8; --c7:#E8C04F; --c8:#93A7AE;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg); color:var(--ink); font:15px/1.5 var(--font-ui); font-variant-numeric:tabular-nums;}
+.wrap{max-width:1180px; margin:0 auto; padding:24px 20px 56px}
+a{color:var(--accent)}
+button{font:inherit; color:inherit}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+.top{display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:flex-end; margin-bottom:18px}
+h1{font-size:22px; font-weight:600; margin:0; letter-spacing:-.01em}
+.updated{margin:2px 0 0; color:var(--ink-2); font-size:13px}
+.sources{display:flex; gap:8px; flex-wrap:wrap}
+.src{display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-2); background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:4px 10px}
+.dot{width:8px; height:8px; border-radius:50%; background:var(--down)}
+.dot.err{background:var(--up)}
+.live{display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; color:var(--down); margin-right:8px; text-transform:uppercase; letter-spacing:.04em}
+.live::before{content:""; width:7px; height:7px; border-radius:50%; background:currentColor; animation:pulse 2s ease-in-out infinite}
+.live.off{color:var(--ink-2)}
+.live.off::before{animation:none}
+@keyframes pulse{50%{opacity:.35}}
+@media (prefers-reduced-motion: reduce){ .live::before{animation:none} }
+.notice{background:var(--warn-bg); color:var(--warn-ink); border-radius:10px; padding:10px 14px; margin:0 0 16px; font-size:14px}
+
+.controls{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:22px; position:sticky; top:0; z-index:5; padding:10px 0; background:var(--bg)}
+.seg{display:flex; background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:3px}
+.seg button{border:0; background:transparent; padding:6px 13px; border-radius:999px; cursor:pointer; font-size:14px; color:var(--ink-2); white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--accent); color:#fff}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .seg button[aria-pressed="true"]{color:#0C171C} }
+
+.hero{display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1.6fr); gap:28px; align-items:end; padding:8px 0 26px; border-bottom:1px solid var(--line); margin-bottom:24px}
+.hero-label{margin:0; color:var(--ink-2); font-size:14px}
+.hero-value{margin:2px 0 6px; font-size:clamp(46px,9vw,84px); line-height:1; font-weight:600; letter-spacing:-.03em}
+.hero-value small{font-size:.32em; font-weight:500; letter-spacing:0; color:var(--ink-2); margin-left:6px}
+.chips{display:flex; gap:8px; flex-wrap:wrap}
+.chip{font-size:13px; padding:3px 9px; border-radius:6px; background:var(--surface); border:1px solid var(--line)}
+.pos{color:var(--up)} .neg{color:var(--down)}
+.stats{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px 20px; margin:0}
+.stats div{border-left:2px solid var(--line); padding-left:12px}
+.stats dt{font-size:13px; color:var(--ink-2)}
+.stats dd{margin:2px 0 0; font-size:21px; font-weight:600}
+.stats dd span{font-size:13px; font-weight:400; color:var(--ink-2); margin-left:4px}
+
+.grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-bottom:18px}
+.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.panel{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:18px 18px 14px; min-width:0}
+.panel.wide{margin-bottom:18px}
+.panel h2{font-size:15px; font-weight:600; margin:0 0 2px}
+.panel .sub{font-size:13px; color:var(--ink-2); margin:0 0 12px}
+.chart{position:relative; height:260px}
+.chart.tall{height:330px}
+.empty{color:var(--ink-2); font-size:14px; padding:24px 0}
+
+.table-wrap{overflow-x:auto; margin:0 -4px}
+table{width:100%; border-collapse:collapse; font-size:14px}
+th{text-align:right; font-weight:500; color:var(--ink-2); font-size:13px; padding:0; border-bottom:1px solid var(--line); white-space:nowrap}
+th:first-child, td:first-child{text-align:left}
+th button{background:none; border:0; padding:8px 6px; cursor:pointer; color:inherit; font-size:13px; width:100%; text-align:inherit}
+th[aria-sort] button{color:var(--ink)}
+td{text-align:right; padding:8px 6px; border-bottom:1px solid var(--line); white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.note{font-size:12px; color:var(--ink-2); margin-left:4px}
+
+.changes{list-style:none; margin:0; padding:0; max-height:520px; overflow-y:auto}
+.changes li{border-bottom:1px solid var(--line)}
+.changes li:last-child{border-bottom:0}
+.changes a{display:grid; grid-template-columns:64px 1fr auto; gap:10px; align-items:baseline; padding:9px 2px; text-decoration:none; color:var(--ink)}
+.changes a:hover{background:var(--surface-2)}
+.changes .p{font-weight:600}
+.changes .what{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.changes .prices{font-size:13px; color:var(--ink-2); display:block}
+.changes .when{font-size:12px; color:var(--ink-2); text-align:right}
+.tally{font-size:13px; color:var(--ink-2); margin:0 0 8px}
+
+footer{color:var(--ink-2); font-size:13px; margin-top:28px; max-width:72ch}
+footer p{margin:0 0 8px}
+
+@media (max-width: 900px){
+  .hero{grid-template-columns:1fr; gap:18px}
+  .grid, .grid.three{grid-template-columns:1fr}
+}
+@media (max-width: 520px){
+  .controls{position:static}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .wrap{padding:16px 14px 40px}
+  .seg button{padding:6px 10px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Baku apartment prices</h1>
+      <p class="updated" id="updated">Loading…</p>
+    </div>
+    <div class="sources" id="sources"></div>
+  </header>
+
+  <p class="notice" id="notice" hidden></p>
+
+  <nav class="controls" aria-label="Filters">
+    <div class="seg" role="group" aria-label="Deal" data-key="deal">
+      <button data-v="sale" aria-pressed="true">For sale</button>
+      <button data-v="rent" aria-pressed="false">For rent</button>
+    </div>
+    <div class="seg" role="group" aria-label="Building" data-key="building">
+      <button data-v="all" aria-pressed="true">All buildings</button>
+      <button data-v="new" aria-pressed="false">New build</button>
+      <button data-v="old" aria-pressed="false">Old build</button>
+    </div>
+    <div class="seg" role="group" aria-label="Rooms" data-key="rooms">
+      <button data-v="all" aria-pressed="true">Any rooms</button>
+      <button data-v="1" aria-pressed="false">1</button>
+      <button data-v="2" aria-pressed="false">2</button>
+      <button data-v="3" aria-pressed="false">3</button>
+      <button data-v="4" aria-pressed="false">4+</button>
+    </div>
+  </nav>
+
+  <p class="empty" id="empty" hidden>No listings match these filters yet. Try another combination, or wait for the next scrape.</p>
+
+  <main id="content">
+    <section class="hero">
+      <div>
+        <p class="hero-label" id="hero-label">Median asking price per m²</p>
+        <p class="hero-value" id="hero-value">–</p>
+        <div class="chips" id="hero-chips"></div>
+      </div>
+      <dl class="stats" id="stats"></dl>
+    </section>
+
+    <section class="panel wide">
+      <h2>Price per m² by week</h2>
+      <p class="sub">Median of all listings online that week, the middle half of listings as a band, and a mix-adjusted line that holds the district mix fixed.</p>
+      <div class="chart tall"><canvas id="c-trend"></canvas></div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Price per m² by district</h2>
+        <p class="sub">Current median of listings online now.</p>
+        <div class="chart" id="c-district-box"><canvas id="c-district"></canvas></div>
+      </section>
+      <section class="panel">
+        <h2>District trends</h2>
+        <p class="sub">Weekly median per m², eight districts with the most listings.</p>
+        <div class="chart" id="c-dtrend-box"><canvas id="c-dtrend"></canvas></div>
+      </section>
+    </div>
+
+    <section class="panel wide">
+      <h2>Districts</h2>
+      <p class="sub" id="district-sub">Select a column heading to sort.</p>
+      <div class="table-wrap"><table id="t-district"></table></div>
+    </section>
+
+    <div class="grid three">
+      <section class="panel">
+        <h2 id="rooms-title">By number of rooms</h2>
+        <p class="sub">Median price (bars) and per m² (line).</p>
+        <div class="chart" id="c-rooms-box"><canvas id="c-rooms"></canvas></div>
+      </section>
+      <section class="panel">
+        <h2>How prices are spread</h2>
+        <p class="sub">Listings by price per m².</p>
+        <div class="chart" id="c-hist-box"><canvas id="c-hist"></canvas></div>
+      </section>
+      <section class="panel">
+        <h2>Floor effect</h2>
+        <p class="sub">Median per m² by floor position. The axis doesn’t start at zero.</p>
+        <div class="chart" id="c-floor-box"><canvas id="c-floor"></canvas></div>
+      </section>
+    </div>
+
+    <section class="panel wide">
+      <h2>Price cuts and rises by week</h2>
+      <p class="sub">Number of ads that changed their asking price each week (bars), and cuts as a share of all listings online that week (line).</p>
+      <div class="chart" id="c-chg-box"><canvas id="c-chg"></canvas></div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <h2>Recent price changes</h2>
+        <p class="tally" id="tally"></p>
+        <ul class="changes" id="changes"></ul>
+      </section>
+      <section class="panel">
+        <h2>Metro stations</h2>
+        <p class="sub">Stations named in at least three listings.</p>
+        <div class="table-wrap"><table id="t-metro"></table></div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <p>Asking prices from bina.az and yeniemlak.az, not sale prices. Dollar prices are converted at 1.70 ₼. A flat posted on both sites with the same rooms, area, floor and location is counted once.</p>
+    <p>“Days listed” runs from when the tracker first saw an ad until it disappeared. Districts marked * are partly inferred from the metro station or settlement in the ad.</p>
+  </footer>
+</div>
+
+<script>
+const state = { deal: "sale", building: "all", rooms: "all" };
+let DATA = null;
+const charts = {};
+let sortKey = "median_ppm2", sortDir = -1;
+
+const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const nf1 = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const money = v => v == null ? "–" : nf0.format(v) + " ₼";
+const perM2 = v => v == null ? "–" : (state.deal === "rent" ? nf1.format(v) : nf0.format(v)) + " ₼";
+const pct = v => v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf1.format(Math.abs(v)) + "%";
+const signCls = v => v == null || Math.abs(v) < 0.05 ? "" : (v > 0 ? "pos" : "neg");
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ROOMS = { "1": "1 room", "2": "2 rooms", "3": "3 rooms", "4": "4+ rooms" };
+const FLOORS = { first: "First floor", middle: "Middle floors", top: "Top floor" };
+const narrow = () => window.innerWidth < 600;
+const fmtDate = iso => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+// Live data comes from /api/data (Vercel function reading the newest export in Neon).
+// data.json is the bundled fallback: demo numbers, or a local export when served with http.server.
+let exportId = null, live = false;
+const POLL_MS = 5 * 60 * 1000;
+const STALE_HOURS = 14;   // two missed 6-hourly runs
+
+async function fetchData() {
+  try {
+    const r = await fetch("/api/data", { cache: "no-cache" });
+    if (r.ok) return { data: await r.json(), id: r.headers.get("X-Export-Id"), live: true };
+  } catch (e) { /* no API when served as plain files */ }
+  const r = await fetch("data.json", { cache: "no-store" });
+  if (!r.ok) throw new Error(r.status);
+  return { data: await r.json(), id: null, live: false };
+}
+
+async function poll() {
+  if (!live || document.hidden) return;
+  try {
+    const r = await fetch("/api/status", { cache: "no-cache" });
+    if (!r.ok) return;
+    const s = await r.json();
+    if (s.export_id != null && String(s.export_id) !== exportId) {
+      const next = await fetchData();
+      if (next.live) { DATA = next.data; exportId = next.id; render(); }
+    } else {
+      renderMeta();   // refresh the "x hours ago" text
+    }
+  } catch (e) { /* try again next tick */ }
+}
+
+async function load() {
+  try {
+    const got = await fetchData();
+    DATA = got.data; exportId = got.id; live = got.live;
+  } catch (e) {
+    document.getElementById("updated").textContent = "";
+    showNotice("No data yet. Run python -m analytics.export, then serve this folder with python -m http.server -d dashboard.");
+    document.getElementById("content").hidden = true;
+    return;
+  }
+  setInterval(poll, POLL_MS);
+  document.addEventListener("visibilitychange", poll);
+  document.querySelectorAll(".seg").forEach(g => g.addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    state[g.dataset.key] = b.dataset.v;
+    g.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    render();
+  }));
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+  render();
+}
+
+function showNotice(text) {
+  const n = document.getElementById("notice");
+  n.textContent = text;
+  n.hidden = false;
+}
+
+function mk(id, cfg) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), cfg);
+}
+
+function themeCharts() {
+  Chart.defaults.font.family = cssv("--font-ui");
+  Chart.defaults.font.size = 12;
+  Chart.defaults.color = cssv("--ink-2");
+  Chart.defaults.borderColor = cssv("--line");
+  Chart.defaults.maintainAspectRatio = false;
+  Chart.defaults.animation = false;
+  Chart.defaults.plugins.legend.labels.boxWidth = 10;
+  Chart.defaults.plugins.legend.labels.boxHeight = 10;
+  Chart.defaults.plugins.tooltip.backgroundColor = cssv("--ink");
+  Chart.defaults.plugins.tooltip.titleColor = cssv("--bg");
+  Chart.defaults.plugins.tooltip.bodyColor = cssv("--bg");
+}
+
+function render() {
+  themeCharts();
+  renderMeta();
+  const seg = DATA.segments && DATA.segments[`${state.deal}|${state.building}|${state.rooms}`];
+  const empty = !seg || !seg.kpi || !seg.kpi.active;
+  document.getElementById("content").hidden = empty;
+  document.getElementById("empty").hidden = !empty;
+  if (empty) return;
+  renderHero(seg);
+  renderTrend(seg);
+  renderDistrictBar(seg);
+  renderDistrictTrend(seg);
+  renderDistrictTable(seg);
+  renderRooms(seg);
+  renderHist(seg);
+  renderFloors(seg);
+  renderChangeTrend(seg);
+  renderChanges();
+  renderMetro(seg);
+}
+
+function ago(date) {
+  const h = (Date.now() - date) / 36e5;
+  if (h < 1) return `${Math.max(1, Math.round(h * 60))} min ago`;
+  if (h < 48) return `${Math.round(h)} h ago`;
+  return `${Math.round(h / 24)} days ago`;
+}
+
+function renderMeta() {
+  const m = DATA.meta || {};
+  const when = m.generated_at ? new Date(m.generated_at + "Z") : null;
+  const hoursOld = when ? (Date.now() - when) / 36e5 : null;
+  const stamp = when ? when.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
+  document.getElementById("updated").innerHTML = when
+    ? `<span class="live ${live && hoursOld < STALE_HOURS ? "" : "off"}">${live ? "Live" : "Snapshot"}</span>`
+      + `Updated ${esc(ago(when))} (${esc(stamp)}), ${nf0.format(m.listings_tracked || 0)} listings tracked`
+    : "";
+  document.getElementById("notice").hidden = true;
+  if (m.demo) showNotice("Demo data. These numbers are invented so you can see the layout. They’re replaced after the first real scrape.");
+  else if (m.empty) showNotice("No listings stored yet. Run the scraper, then the export.");
+  else if (hoursOld != null && hoursOld > STALE_HOURS) showNotice(`The last update was ${ago(when)}. Scrapes run every 6 hours, so a run has probably failed. Check the GitHub Actions log.`);
+  document.getElementById("sources").innerHTML = (DATA.sources || []).map(s => {
+    const ok = s.last_status === "ok";
+    const last = s.last_ok ? fmtDate(s.last_ok + "Z") : "never";
+    return `<span class="src" title="${esc(s.last_error || "")}"><span class="dot ${ok ? "" : "err"}"></span>${esc(s.source)}: ${nf0.format(s.active)} live, last OK ${esc(last)}</span>`;
+  }).join("");
+}
+
+function renderHero(seg) {
+  const k = seg.kpi, rent = state.deal === "rent";
+  document.getElementById("hero-label").textContent = rent ? "Median asking rent per m², per month" : "Median asking price per m²";
+  document.getElementById("hero-value").innerHTML = `${rent ? nf1.format(k.median_ppm2) : nf0.format(k.median_ppm2)}<small>₼/m²</small>`;
+  document.getElementById("hero-chips").innerHTML = [
+    [k.change_4w, "in 4 weeks"], [k.change_12w, "in 12 weeks"]
+  ].map(([v, t]) => `<span class="chip"><b class="${signCls(v)}">${pct(v)}</b> ${t}</span>`).join("")
+    + `<span class="chip">Middle half ${perM2(k.p25_ppm2)} to ${perM2(k.p75_ppm2)}</span>`;
+  const stats = [
+    [rent ? "Median rent" : "Median price", money(k.median_price), rent ? "per month" : ""],
+    ["Listings online", nf0.format(k.active), ""],
+    ["New in 7 days", nf0.format(k.new_7d), ""],
+    ["Cut price in 30 days", k.cut_share_30d == null ? "–" : nf1.format(k.cut_share_30d) + "%", `${nf0.format(k.cuts_30d)} ads`],
+    ["Typical cut", pct(k.median_cut_pct), ""],
+    ["Median days listed", k.median_days_listed == null ? "–" : nf0.format(k.median_days_listed), "days"],
+  ];
+  document.getElementById("stats").innerHTML = stats.map(([t, v, s]) => `<div><dt>${t}</dt><dd>${v}${s ? `<span>${s}</span>` : ""}</dd></div>`).join("");
+}
+
+function trimTrend(trend) {
+  const i = trend.findIndex(t => t.n > 0);
+  return i < 0 ? [] : trend.slice(i);
+}
+
+function renderTrend(seg) {
+  const t = trimTrend(seg.trend);
+  const labels = t.map(x => fmtDate(x.week));
+  const accent = cssv("--accent");
+  const ds = [
+    { label: "", data: t.map(x => x.p25), borderWidth: 0, pointRadius: 0, fill: false },
+    { label: "Middle half of listings", data: t.map(x => x.p75), borderWidth: 0, pointRadius: 0, fill: "-1", backgroundColor: cssv("--accent-soft") },
+    { label: "Median", data: t.map(x => x.median), borderColor: accent, backgroundColor: accent, borderWidth: 2.5, pointRadius: 0, tension: .25 },
+    { label: "Mix-adjusted", data: t.map(x => x.adjusted), borderColor: cssv("--ink"), backgroundColor: cssv("--ink"), borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, tension: .25 },
+  ];
+  if (state.building === "all") {
+    ds.push({ label: "New build", data: t.map(x => x.new), borderColor: cssv("--new"), backgroundColor: cssv("--new"), borderWidth: 1.5, pointRadius: 0, tension: .25, hidden: true });
+    ds.push({ label: "Old build", data: t.map(x => x.old), borderColor: cssv("--sand"), backgroundColor: cssv("--sand"), borderWidth: 1.5, pointRadius: 0, tension: .25, hidden: true });
+  }
+  mk("c-trend", {
+    type: "line", data: { labels, datasets: ds },
+    options: {
+      interaction: { mode: "index", intersect: false }, spanGaps: true,
+      plugins: {
+        legend: { position: "bottom", labels: { filter: i => i.text !== "" } },
+        tooltip: { filter: i => i.dataset.label !== "", callbacks: {
+          label: c => `${c.dataset.label === "Middle half of listings" ? "75th percentile" : c.dataset.label}: ${perM2(c.parsed.y)}`,
+          afterBody: items => `Listings: ${nf0.format(t[items[0].dataIndex].n)}` } }
+      },
+      scales: { y: { ticks: { callback: v => perM2(v) } }, x: { ticks: { maxTicksLimit: narrow() ? 5 : 10, maxRotation: 0 } } }
+    }
+  });
+}
+
+function renderDistrictBar(seg) {
+  const d = [...seg.districts].filter(x => x.median_ppm2 != null).sort((a, b) => b.median_ppm2 - a.median_ppm2);
+  document.getElementById("c-district-box").style.height = Math.max(200, d.length * 26 + 30) + "px";
+  mk("c-district", {
+    type: "bar",
+    data: { labels: d.map(x => x.district + (x.inferred_share >= 25 ? " *" : "")), datasets: [{ data: d.map(x => x.median_ppm2), backgroundColor: cssv("--accent"), borderRadius: 3, barPercentage: .8 }] },
+    options: { indexAxis: "y", plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${perM2(c.parsed.x)}, ${nf0.format(d[c.dataIndex].n)} listings` } } },
+      scales: { x: { ticks: { callback: v => perM2(v), maxTicksLimit: 5 } }, y: { grid: { display: false } } } }
+  });
+}
+
+function renderDistrictTrend(seg) {
+  const weeks = DATA.meta.weeks || [];
+  const names = Object.keys(seg.district_trend || {});
+  const first = Math.max(0, weeks.findIndex((_, i) => names.some(n => seg.district_trend[n][i] != null)));
+  const palette = [1, 2, 3, 4, 5, 6, 7, 8].map(i => cssv(`--c${i}`));
+  mk("c-dtrend", {
+    type: "line",
+    data: { labels: weeks.slice(first).map(fmtDate), datasets: names.map((n, i) => ({
+      label: n, data: seg.district_trend[n].slice(first), borderColor: palette[i % 8], backgroundColor: palette[i % 8],
+      borderWidth: 1.8, pointRadius: 0, tension: .25, spanGaps: true })) },
+    options: { interaction: { mode: "nearest", intersect: false },
+      plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${perM2(c.parsed.y)}` } } },
+      scales: { y: { ticks: { callback: v => perM2(v) } }, x: { ticks: { maxTicksLimit: narrow() ? 4 : 6, maxRotation: 0 } } } }
+  });
+}
+
+function districtColumns() {
+  const cols = [
+    { k: "district", t: "District", f: (v, r) => esc(v) + (r.inferred_share >= 25 ? '<span class="note">*</span>' : "") },
+    { k: "n", t: "Listings", f: v => nf0.format(v) },
+    { k: "median_price", t: state.deal === "rent" ? "Median rent" : "Median price", f: money },
+    { k: "median_ppm2", t: "Per m²", f: perM2 },
+    { k: "change_4w", t: "4-week change", f: v => `<span class="${signCls(v)}">${pct(v)}</span>` },
+    { k: "cut_share_30d", t: "Cut in 30 days", f: v => v == null ? "–" : nf0.format(v) + "%" },
+    { k: "median_cut_pct", t: "Typical cut", f: pct },
+  ];
+  if (state.building === "all") cols.push({ k: "new_ppm2", t: "New build per m²", f: perM2 }, { k: "old_ppm2", t: "Old build per m²", f: perM2 });
+  if (state.deal === "sale") cols.push({ k: "gross_yield", t: "Gross rental yield", f: v => v == null ? "–" : nf1.format(v) + "%" });
+  return cols;
+}
+
+function renderDistrictTable(seg) {
+  const cols = districtColumns();
+  if (!cols.some(c => c.k === sortKey)) { sortKey = "median_ppm2"; sortDir = -1; }
+  const rows = [...seg.districts].sort((a, b) => {
+    const x = a[sortKey], y = b[sortKey];
+    if (x == null) return 1; if (y == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y, "az") : x - y) * sortDir;
+  });
+  document.getElementById("district-sub").textContent = state.deal === "sale"
+    ? "Gross rental yield is a year of median rent per m² divided by median sale price per m², same rooms filter. Select a heading to sort."
+    : "Select a column heading to sort.";
+  const t = document.getElementById("t-district");
+  t.innerHTML = `<thead><tr>${cols.map(c => `<th ${c.k === sortKey ? `aria-sort="${sortDir > 0 ? "ascending" : "descending"}"` : ""}><button data-k="${c.k}">${c.t}${c.k === sortKey ? (sortDir > 0 ? " ↑" : " ↓") : ""}</button></th>`).join("")}</tr></thead>`
+    + `<tbody>${rows.map(r => `<tr>${cols.map(c => `<td>${c.f(r[c.k], r)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+  t.querySelectorAll("th button").forEach(b => b.addEventListener("click", () => {
+    if (sortKey === b.dataset.k) sortDir *= -1; else { sortKey = b.dataset.k; sortDir = b.dataset.k === "district" ? 1 : -1; }
+    renderDistrictTable(seg);
+  }));
+}
+
+function renderRooms(seg) {
+  const box = document.getElementById("c-rooms-box");
+  const panel = box.closest(".panel");
+  panel.hidden = !seg.rooms.length;
+  if (!seg.rooms.length) return;
+  mk("c-rooms", {
+    data: { labels: seg.rooms.map(r => r.rooms === "4" ? "4+" : r.rooms), datasets: [
+      { type: "bar", label: state.deal === "rent" ? "Median rent" : "Median price", data: seg.rooms.map(r => r.median_price), backgroundColor: cssv("--accent"), borderRadius: 3, yAxisID: "y" },
+      { type: "line", label: "Per m²", data: seg.rooms.map(r => r.median_ppm2), borderColor: cssv("--sand"), backgroundColor: cssv("--sand"), borderWidth: 2, pointRadius: 3, yAxisID: "y1" },
+    ] },
+    options: { plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.dataset.yAxisID === "y" ? money(c.parsed.y) : perM2(c.parsed.y)}` } } },
+      scales: { x: { title: { display: true, text: "Rooms" }, grid: { display: false }, ticks: { maxRotation: 0 } },
+                y: { ticks: { callback: v => state.deal === "rent" ? nf0.format(v) : nf0.format(v / 1000) + "k", maxTicksLimit: 5 } },
+                y1: { position: "right", grid: { display: false }, ticks: { callback: v => perM2(v), maxTicksLimit: 5 } } } }
+  });
+}
+
+function renderHist(seg) {
+  const h = seg.hist;
+  if (!h) { mk("c-hist", { type: "bar", data: { labels: [], datasets: [] } }); return; }
+  const labels = h.counts.map((_, i) => perM2(h.edges[i]));
+  mk("c-hist", {
+    type: "bar",
+    data: { labels, datasets: [{ data: h.counts, backgroundColor: cssv("--accent"), barPercentage: 1, categoryPercentage: .92 }] },
+    options: { plugins: { legend: { display: false }, tooltip: { callbacks: {
+      title: i => `${perM2(h.edges[i[0].dataIndex])} to ${perM2(h.edges[i[0].dataIndex + 1])}`, label: c => `${nf0.format(c.parsed.y)} listings` } } },
+      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 5, maxRotation: 0 } }, y: { ticks: { maxTicksLimit: 5 } } } }
+  });
+}
+
+function renderFloors(seg) {
+  const f = seg.floors.filter(x => x.median_ppm2 != null);
+  const mid = (seg.floors.find(x => x.position === "middle") || {}).median_ppm2;
+  const lo = f.length ? Math.min(...f.map(x => x.median_ppm2)) : 0;
+  mk("c-floor", {
+    type: "bar",
+    data: { labels: f.map(x => FLOORS[x.position]), datasets: [{ data: f.map(x => x.median_ppm2),
+      backgroundColor: f.map(x => x.position === "middle" ? cssv("--accent") : cssv("--sand")), borderRadius: 3, barPercentage: .6 }] },
+    options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => {
+      const x = f[c.dataIndex];
+      const diff = mid && x.position !== "middle" ? `, ${pct((x.median_ppm2 / mid - 1) * 100)} vs middle` : "";
+      return `${perM2(x.median_ppm2)}${diff}, ${nf0.format(x.n)} listings`; } } } },
+      scales: { y: { min: Math.floor(lo * 0.85), ticks: { callback: v => perM2(v), maxTicksLimit: 5 } }, x: { grid: { display: false } } } }
+  });
+}
+
+function renderChangeTrend(seg) {
+  const all = seg.change_trend || [];
+  const i = all.findIndex(x => x.cuts || x.rises);
+  const t = i < 0 ? [] : all.slice(i);
+  document.getElementById("c-chg-box").closest(".panel").hidden = !t.length;
+  if (!t.length) return;
+  mk("c-chg", {
+    data: { labels: t.map(x => fmtDate(x.week)), datasets: [
+      { type: "bar", label: "Cuts", data: t.map(x => x.cuts), backgroundColor: cssv("--down"), borderRadius: 2, stack: "n", yAxisID: "y" },
+      { type: "bar", label: "Rises", data: t.map(x => x.rises), backgroundColor: cssv("--up"), borderRadius: 2, stack: "n", yAxisID: "y" },
+      { type: "line", label: "Share of listings cut", data: t.map(x => x.cut_rate), borderColor: cssv("--ink"), backgroundColor: cssv("--ink"),
+        borderWidth: 1.5, pointRadius: 0, tension: .25, spanGaps: true, yAxisID: "y1" },
+    ] },
+    options: { interaction: { mode: "index", intersect: false },
+      plugins: { legend: { position: "bottom" }, tooltip: { callbacks: {
+        label: c => c.dataset.yAxisID === "y1" ? `${c.dataset.label}: ${c.parsed.y == null ? "–" : nf1.format(c.parsed.y) + "%"}` : `${c.dataset.label}: ${nf0.format(c.parsed.y)}`,
+        afterBody: items => { const m = t[items[0].dataIndex].median_cut_pct; return m == null ? "" : `Typical cut: ${pct(m)}`; } } } },
+      scales: { x: { stacked: true, grid: { display: false }, ticks: { maxTicksLimit: narrow() ? 5 : 10, maxRotation: 0 } },
+                y: { stacked: true, title: { display: !narrow(), text: "Ads" }, ticks: { maxTicksLimit: 5 } },
+                y1: { position: "right", min: 0, grid: { display: false }, ticks: { callback: v => nf0.format(v) + "%", maxTicksLimit: 5 } } } }
+  });
+}
+
+function renderChanges() {
+  const list = (DATA.changes || []).filter(c => c.deal === state.deal
+    && (state.building === "all" || c.building === state.building)
+    && (state.rooms === "all" || c.rooms_bucket === state.rooms));
+  const cuts = list.filter(c => c.pct < 0).length;
+  document.getElementById("tally").textContent = list.length
+    ? `${nf0.format(cuts)} cuts and ${nf0.format(list.length - cuts)} rises among the latest ${nf0.format(list.length)} changes.`
+    : "No price changes recorded for these filters yet.";
+  document.getElementById("changes").innerHTML = list.slice(0, 40).map(c => {
+    const where = [c.district, c.metro].filter(Boolean).join(", ");
+    const what = [c.rooms ? ROOMS[c.rooms >= 4 ? "4" : String(c.rooms)] : null, c.area ? nf0.format(c.area) + " m²" : null, where].filter(Boolean).join(", ");
+    return `<li><a href="${esc(c.url)}" target="_blank" rel="noopener">
+      <span class="p ${signCls(c.pct)}">${pct(c.pct)}</span>
+      <span class="what">${esc(what)}<span class="prices">${money(c.old)} to ${money(c.new)}</span></span>
+      <span class="when">${fmtDate(c.date)}<br>${esc(c.source)}</span></a></li>`;
+  }).join("");
+}
+
+function renderMetro(seg) {
+  const t = document.getElementById("t-metro");
+  if (!seg.metro.length) { t.innerHTML = `<tbody><tr><td class="empty">No stations named often enough yet.</td></tr></tbody>`; return; }
+  t.innerHTML = `<thead><tr><th>Station</th><th>Listings</th><th>Per m²</th><th>${state.deal === "rent" ? "Median rent" : "Median price"}</th></tr></thead><tbody>`
+    + seg.metro.map(m => `<tr><td>${esc(m.metro)}</td><td>${nf0.format(m.n)}</td><td>${perM2(m.median_ppm2)}</td><td>${money(m.median_price)}</td></tr>`).join("")
+    + "</tbody>";
+}
+
+load();
+</script>
+</body>
+</html>

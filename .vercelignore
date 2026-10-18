@@ -1,0 +1,10 @@
+# Vercel only needs the dashboard, the API functions and package.json.
+# The Python scraper runs on GitHub Actions.
+scraper/
+analytics/
+tools/
+tests/
+data/
+requirements.txt
+.env
+.env.*
