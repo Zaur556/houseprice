@@ -4,11 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Baku apartment prices</title>
+<meta name="description" content="Live asking prices for Baku apartments from bina.az and yeniemlak.az, with two years of history, filters and a price map.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏢</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 :root{
   color-scheme: light;
@@ -17,6 +20,7 @@
   --accent:#0F6E7A; --accent-soft:rgba(15,110,122,.14); --sand:#A87A3E; --new:#2B8C99;
   --up:#B4441F; --down:#1F7A4D; --warn-bg:#FFF4DC; --warn-ink:#6B4A07;
   --c1:#0F6E7A; --c2:#A87A3E; --c3:#5B5FC7; --c4:#B4441F; --c5:#2E8B57; --c6:#8A4F9E; --c7:#C28A00; --c8:#4A5D66;
+  --seq-0:#E3F1F2; --seq-1:#0B4F58; --neutral:#E9E4DA;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -25,6 +29,7 @@
     --accent:#4FB7C2; --accent-soft:rgba(79,183,194,.16); --sand:#D6A867; --new:#7FD0D8;
     --up:#EE8661; --down:#55C58F; --warn-bg:#3A2E10; --warn-ink:#F4D58A;
     --c1:#4FB7C2; --c2:#D6A867; --c3:#9EA2F2; --c4:#EE8661; --c5:#6CCB94; --c6:#C79AD8; --c7:#E8C04F; --c8:#93A7AE;
+    --seq-0:#1D3A42; --seq-1:#8FE3EC; --neutral:#3A4446;
   }
 }
 :root[data-theme="dark"]{
@@ -33,13 +38,14 @@
   --accent:#4FB7C2; --accent-soft:rgba(79,183,194,.16); --sand:#D6A867; --new:#7FD0D8;
   --up:#EE8661; --down:#55C58F; --warn-bg:#3A2E10; --warn-ink:#F4D58A;
   --c1:#4FB7C2; --c2:#D6A867; --c3:#9EA2F2; --c4:#EE8661; --c5:#6CCB94; --c6:#C79AD8; --c7:#E8C04F; --c8:#93A7AE;
+  --seq-0:#1D3A42; --seq-1:#8FE3EC; --neutral:#3A4446;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg); color:var(--ink); font:15px/1.5 var(--font-ui); font-variant-numeric:tabular-nums;}
 .wrap{max-width:1180px; margin:0 auto; padding:24px 20px 56px}
 a{color:var(--accent)}
-button{font:inherit; color:inherit}
+button, input, select{font:inherit; color:inherit}
 :focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 
 .top{display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:flex-end; margin-bottom:18px}
@@ -57,11 +63,33 @@ h1{font-size:22px; font-weight:600; margin:0; letter-spacing:-.01em}
 @media (prefers-reduced-motion: reduce){ .live::before{animation:none} }
 .notice{background:var(--warn-bg); color:var(--warn-ink); border-radius:10px; padding:10px 14px; margin:0 0 16px; font-size:14px}
 
-.controls{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:22px; position:sticky; top:0; z-index:5; padding:10px 0; background:var(--bg)}
+/* filters */
+.controls{position:sticky; top:0; z-index:1000; background:var(--bg); padding:10px 0; margin-bottom:18px; border-bottom:1px solid transparent}
+.controls.stuck{border-bottom-color:var(--line)}
+.row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+.row + .row{margin-top:10px}
 .seg{display:flex; background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:3px}
 .seg button{border:0; background:transparent; padding:6px 13px; border-radius:999px; cursor:pointer; font-size:14px; color:var(--ink-2); white-space:nowrap}
 .seg button[aria-pressed="true"]{background:var(--accent); color:#fff}
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .seg button[aria-pressed="true"]{color:#0C171C} }
+:root[data-theme="dark"] .seg button[aria-pressed="true"]{color:#0C171C}
+.more{border:1px solid var(--line); background:var(--surface); border-radius:999px; padding:6px 13px; cursor:pointer; font-size:14px; color:var(--ink-2)}
+.more[aria-expanded="true"]{color:var(--ink); border-color:var(--ink-2)}
+.more .count{display:inline-block; min-width:18px; padding:0 5px; margin-left:4px; border-radius:9px; background:var(--accent); color:#fff; font-size:12px; text-align:center}
+.extra{display:flex; gap:12px 18px; flex-wrap:wrap; align-items:flex-end; background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-top:10px}
+.extra[hidden]{display:none}
+.field{display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--ink-2)}
+.range{display:flex; align-items:center; gap:6px}
+.range input{width:92px; padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2)}
+.dd{position:relative}
+.dd summary{list-style:none; cursor:pointer; padding:6px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2); min-width:170px; font-size:14px; color:var(--ink)}
+.dd summary::-webkit-details-marker{display:none}
+.dd summary::after{content:"▾"; float:right; margin-left:8px; color:var(--ink-2)}
+.dd .menu{position:absolute; z-index:1001; top:calc(100% + 4px); left:0; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:6px; width:240px; max-height:320px; overflow:auto; box-shadow:0 8px 24px rgba(0,0,0,.15)}
+.dd label{display:flex; gap:8px; align-items:center; padding:5px 6px; border-radius:6px; font-size:14px; color:var(--ink); cursor:pointer}
+.dd label:hover{background:var(--surface-2)}
+.dd label span{margin-left:auto; color:var(--ink-2); font-size:12px}
+.linkbtn{background:none; border:0; color:var(--accent); cursor:pointer; padding:6px 4px; font-size:14px}
 
 .hero{display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1.6fr); gap:28px; align-items:end; padding:8px 0 26px; border-bottom:1px solid var(--line); margin-bottom:24px}
 .hero-label{margin:0; color:var(--ink-2); font-size:14px}
@@ -82,9 +110,32 @@ h1{font-size:22px; font-weight:600; margin:0; letter-spacing:-.01em}
 .panel.wide{margin-bottom:18px}
 .panel h2{font-size:15px; font-weight:600; margin:0 0 2px}
 .panel .sub{font-size:13px; color:var(--ink-2); margin:0 0 12px}
+.panel-head{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start}
 .chart{position:relative; height:260px}
-.chart.tall{height:330px}
+.chart.tall{height:340px}
 .empty{color:var(--ink-2); font-size:14px; padding:24px 0}
+.legend-note{font-size:12px; color:var(--ink-2); margin:8px 0 0}
+
+/* map */
+.map-layout{display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:16px}
+#map{height:480px; border-radius:10px; border:1px solid var(--line); background:var(--surface-2); z-index:0}
+.map-side h3{font-size:13px; font-weight:600; margin:0 0 6px; color:var(--ink-2)}
+.movers{list-style:none; margin:0 0 14px; padding:0; font-size:14px}
+.movers li{display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-bottom:1px solid var(--line); cursor:pointer}
+.movers li:last-child{border-bottom:0}
+.movers .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.scale{height:10px; border-radius:5px; margin:6px 0 4px}
+.scale-labels{display:flex; justify-content:space-between; font-size:12px; color:var(--ink-2)}
+.metric{padding:6px 8px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2); font-size:14px}
+.leaflet-container{font:13px/1.4 var(--font-ui)}
+.leaflet-popup-content-wrapper, .leaflet-popup-tip{background:var(--surface); color:var(--ink)}
+.leaflet-popup-content{margin:10px 12px}
+.pop b{font-size:14px}
+.pop .k{color:var(--ink-2)}
+.leaflet-control-attribution{background:rgba(255,255,255,.75) !important}
+.dark-tiles .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.85) saturate(.6)}
+#map .leaflet-tile-pane{filter:saturate(.35) contrast(.95)}
+#map.dark-tiles .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.85) saturate(.35)}
 
 .table-wrap{overflow-x:auto; margin:0 -4px}
 table{width:100%; border-collapse:collapse; font-size:14px}
@@ -94,12 +145,13 @@ th button{background:none; border:0; padding:8px 6px; cursor:pointer; color:inhe
 th[aria-sort] button{color:var(--ink)}
 td{text-align:right; padding:8px 6px; border-bottom:1px solid var(--line); white-space:nowrap}
 tr:last-child td{border-bottom:0}
+td button.rowlink{background:none; border:0; padding:0; color:var(--accent); cursor:pointer; font-size:14px; text-align:left}
 .note{font-size:12px; color:var(--ink-2); margin-left:4px}
 
 .changes{list-style:none; margin:0; padding:0; max-height:520px; overflow-y:auto}
 .changes li{border-bottom:1px solid var(--line)}
 .changes li:last-child{border-bottom:0}
-.changes a{display:grid; grid-template-columns:64px 1fr auto; gap:10px; align-items:baseline; padding:9px 2px; text-decoration:none; color:var(--ink)}
+.changes a, .changes .row-x{display:grid; grid-template-columns:64px 1fr auto; gap:10px; align-items:baseline; padding:9px 2px; text-decoration:none; color:var(--ink)}
 .changes a:hover{background:var(--surface-2)}
 .changes .p{font-weight:600}
 .changes .what{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
@@ -107,14 +159,26 @@ tr:last-child td{border-bottom:0}
 .changes .when{font-size:12px; color:var(--ink-2); text-align:right}
 .tally{font-size:13px; color:var(--ink-2); margin:0 0 8px}
 
-footer{color:var(--ink-2); font-size:13px; margin-top:28px; max-width:72ch}
+.check{display:flex; gap:8px; flex-wrap:wrap}
+.check input{flex:1 1 320px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2)}
+.check button{padding:8px 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; cursor:pointer}
+.verdict{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.4fr); gap:18px; margin-top:14px}
+.verdict dl{display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0; font-size:14px}
+.verdict dt{color:var(--ink-2)}
+.verdict dd{margin:0; font-weight:500}
+.big{font-size:26px; font-weight:600; margin:0 0 6px}
+
+footer{color:var(--ink-2); font-size:13px; margin-top:28px; max-width:80ch}
 footer p{margin:0 0 8px}
 
 @media (max-width: 900px){
   .hero{grid-template-columns:1fr; gap:18px}
   .grid, .grid.three{grid-template-columns:1fr}
+  .map-layout{grid-template-columns:1fr}
+  #map{height:380px}
+  .verdict{grid-template-columns:1fr}
 }
-@media (max-width: 520px){
+@media (max-width: 560px){
   .controls{position:static}
   .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
   .wrap{padding:16px 14px 40px}
@@ -134,26 +198,57 @@ footer p{margin:0 0 8px}
 
   <p class="notice" id="notice" hidden></p>
 
-  <nav class="controls" aria-label="Filters">
-    <div class="seg" role="group" aria-label="Deal" data-key="deal">
-      <button data-v="sale" aria-pressed="true">For sale</button>
-      <button data-v="rent" aria-pressed="false">For rent</button>
+  <nav class="controls" id="controls" aria-label="Filters">
+    <div class="row">
+      <div class="seg" role="group" aria-label="Deal" data-key="deal">
+        <button data-v="sale" aria-pressed="true">For sale</button>
+        <button data-v="rent" aria-pressed="false">For rent</button>
+      </div>
+      <div class="seg" role="group" aria-label="Building" data-key="building">
+        <button data-v="all" aria-pressed="true">All buildings</button>
+        <button data-v="new" aria-pressed="false">New build</button>
+        <button data-v="old" aria-pressed="false">Old build</button>
+      </div>
+      <div class="seg" role="group" aria-label="Rooms" data-key="rooms" data-multi>
+        <button data-v="all" aria-pressed="true">Any rooms</button>
+        <button data-v="1" aria-pressed="false">1</button>
+        <button data-v="2" aria-pressed="false">2</button>
+        <button data-v="3" aria-pressed="false">3</button>
+        <button data-v="4" aria-pressed="false">4+</button>
+      </div>
+      <div class="seg" role="group" aria-label="Period" data-key="period">
+        <button data-v="3m" aria-pressed="false">3 months</button>
+        <button data-v="6m" aria-pressed="false">6 months</button>
+        <button data-v="1y" aria-pressed="true">1 year</button>
+        <button data-v="2y" aria-pressed="false">2 years</button>
+      </div>
+      <button class="more" id="more" aria-expanded="false" aria-controls="extra">More filters</button>
     </div>
-    <div class="seg" role="group" aria-label="Building" data-key="building">
-      <button data-v="all" aria-pressed="true">All buildings</button>
-      <button data-v="new" aria-pressed="false">New build</button>
-      <button data-v="old" aria-pressed="false">Old build</button>
-    </div>
-    <div class="seg" role="group" aria-label="Rooms" data-key="rooms">
-      <button data-v="all" aria-pressed="true">Any rooms</button>
-      <button data-v="1" aria-pressed="false">1</button>
-      <button data-v="2" aria-pressed="false">2</button>
-      <button data-v="3" aria-pressed="false">3</button>
-      <button data-v="4" aria-pressed="false">4+</button>
+    <div class="extra" id="extra" hidden>
+      <div class="field">District
+        <details class="dd" id="dd-district"><summary id="dd-district-label">All districts</summary><div class="menu" id="dd-district-menu"></div></details>
+      </div>
+      <div class="field"><span id="price-label">Price, ₼</span>
+        <div class="range"><input type="number" inputmode="numeric" min="0" placeholder="from" id="pmin" aria-label="Minimum price"><span>–</span><input type="number" inputmode="numeric" min="0" placeholder="to" id="pmax" aria-label="Maximum price"></div>
+      </div>
+      <div class="field">Area, m²
+        <div class="range"><input type="number" inputmode="numeric" min="0" placeholder="from" id="amin" aria-label="Minimum area"><span>–</span><input type="number" inputmode="numeric" min="0" placeholder="to" id="amax" aria-label="Maximum area"></div>
+      </div>
+      <div class="field">Source
+        <div class="seg" role="group" aria-label="Source" data-key="source">
+          <button data-v="all" aria-pressed="true">Both</button>
+          <button data-v="bina" aria-pressed="false">bina.az</button>
+          <button data-v="yeniemlak" aria-pressed="false">yeniemlak.az</button>
+        </div>
+      </div>
+      <div class="row" style="margin-left:auto">
+        <button class="linkbtn" id="reset">Reset filters</button>
+        <button class="linkbtn" id="share">Copy link to this view</button>
+      </div>
     </div>
   </nav>
 
-  <p class="empty" id="empty" hidden>No listings match these filters yet. Try another combination, or wait for the next scrape.</p>
+  <p class="empty" id="empty" hidden>No listings match these filters. Widen the price or area range, or pick more districts.</p>
 
   <main id="content">
     <section class="hero">
@@ -166,52 +261,90 @@ footer p{margin:0 0 8px}
     </section>
 
     <section class="panel wide">
-      <h2>Price per m² by week</h2>
-      <p class="sub">Median of all listings online that week, the middle half of listings as a band, and a mix-adjusted line that holds the district mix fixed.</p>
+      <h2>Price per m² over time</h2>
+      <p class="sub" id="trend-sub">Median of listings online in each period, the middle half of listings as a band, and a mix-adjusted line that holds the district mix fixed.</p>
       <div class="chart tall"><canvas id="c-trend"></canvas></div>
+      <p class="legend-note" id="trend-note"></p>
+    </section>
+
+    <section class="panel wide">
+      <div class="panel-head">
+        <div>
+          <h2>Price map</h2>
+          <p class="sub" id="map-sub">Each bubble is a metro station, settlement or district. Size shows listings online now.</p>
+        </div>
+        <label class="field">Colour by
+          <select class="metric" id="map-metric">
+            <option value="ppm2">Median price per m² now</option>
+            <option value="change">Change over the period</option>
+            <option value="cuts">Share that cut their price (30 days)</option>
+            <option value="yield">Gross rental yield</option>
+            <option value="n">Listings online</option>
+          </select>
+        </label>
+      </div>
+      <div class="map-layout">
+        <div id="map" role="img" aria-label="Map of Baku with price bubbles"></div>
+        <div class="map-side">
+          <h3 id="scale-title">Scale</h3>
+          <div class="scale" id="scale"></div>
+          <div class="scale-labels"><span id="scale-lo"></span><span id="scale-hi"></span></div>
+          <p class="legend-note" id="map-note"></p>
+          <h3 style="margin-top:14px">Biggest rises over the period</h3>
+          <ul class="movers" id="movers-up"></ul>
+          <h3>Biggest falls over the period</h3>
+          <ul class="movers" id="movers-down"></ul>
+        </div>
+      </div>
     </section>
 
     <div class="grid">
       <section class="panel">
         <h2>Price per m² by district</h2>
-        <p class="sub">Current median of listings online now.</p>
+        <p class="sub">Median of listings online now. Select a bar to filter to that district.</p>
         <div class="chart" id="c-district-box"><canvas id="c-district"></canvas></div>
       </section>
       <section class="panel">
         <h2>District trends</h2>
-        <p class="sub">Weekly median per m², eight districts with the most listings.</p>
-        <div class="chart" id="c-dtrend-box"><canvas id="c-dtrend"></canvas></div>
+        <p class="sub">Median per m² over the period, eight districts with the most listings.</p>
+        <div class="chart"><canvas id="c-dtrend"></canvas></div>
       </section>
     </div>
 
     <section class="panel wide">
-      <h2>Districts</h2>
-      <p class="sub" id="district-sub">Select a column heading to sort.</p>
+      <div class="panel-head">
+        <div>
+          <h2>Districts</h2>
+          <p class="sub" id="district-sub">Select a column heading to sort.</p>
+        </div>
+        <button class="linkbtn" id="csv">Download CSV</button>
+      </div>
       <div class="table-wrap"><table id="t-district"></table></div>
     </section>
 
     <div class="grid three">
       <section class="panel">
-        <h2 id="rooms-title">By number of rooms</h2>
+        <h2>By number of rooms</h2>
         <p class="sub">Median price (bars) and per m² (line).</p>
         <div class="chart" id="c-rooms-box"><canvas id="c-rooms"></canvas></div>
       </section>
       <section class="panel">
         <h2>How prices are spread</h2>
-        <p class="sub">Listings by price per m².</p>
-        <div class="chart" id="c-hist-box"><canvas id="c-hist"></canvas></div>
+        <p class="sub">Listings online now by price per m².</p>
+        <div class="chart"><canvas id="c-hist"></canvas></div>
       </section>
       <section class="panel">
         <h2>Floor effect</h2>
         <p class="sub">Median per m² by floor position. The axis doesn’t start at zero.</p>
-        <div class="chart" id="c-floor-box"><canvas id="c-floor"></canvas></div>
+        <div class="chart"><canvas id="c-floor"></canvas></div>
       </section>
     </div>
 
     <section class="panel wide">
       <h2>Price cuts and rises by week</h2>
-      <p class="sub">Number of ads that changed their asking price each week (bars), and cuts as a share of all listings online that week (line).</p>
+      <p class="sub">Ads that changed their asking price each week (bars), and cuts as a share of listings online that week (line). Counted from our own 6-hourly scrapes only.</p>
       <div class="chart" id="c-chg-box"><canvas id="c-chg"></canvas></div>
+      <p class="empty" id="c-chg-empty" hidden>Price changes show up here once the scraper has watched the same ads for a few weeks.</p>
     </section>
 
     <div class="grid">
@@ -222,24 +355,44 @@ footer p{margin:0 0 8px}
       </section>
       <section class="panel">
         <h2>Metro stations</h2>
-        <p class="sub">Stations named in at least three listings.</p>
+        <p class="sub">Stations named in at least three listings online now.</p>
         <div class="table-wrap"><table id="t-metro"></table></div>
       </section>
     </div>
+
+    <section class="panel wide" id="check-panel">
+      <h2>Check a listing</h2>
+      <p class="sub">Paste a bina.az or yeniemlak.az ad link to see its price history and how it compares with similar flats.</p>
+      <form class="check" id="check-form">
+        <input type="url" id="check-url" placeholder="https://bina.az/items/1234567" aria-label="Ad link">
+        <button type="submit">Check</button>
+      </form>
+      <div id="check-out"></div>
+    </section>
   </main>
 
   <footer>
-    <p>Asking prices from bina.az and yeniemlak.az, not sale prices. Dollar prices are converted at 1.70 ₼. A flat posted on both sites with the same rooms, area, floor and location is counted once.</p>
+    <p><b>What this is.</b> Asking prices from bina.az and yeniemlak.az, not sale prices. Dollar prices are converted at 1.70 ₼. A flat posted on both sites with the same rooms, area, floor and location is counted once.</p>
+    <p><b>History.</b> From <span id="f-live">the first scrape</span> the newest ads in each section are read every 6 hours. Earlier months come from copies of bina.az ads saved by archive.org: a sample of a few hundred ads a month, not every listing, and none for some months. Those stretches are drawn dashed.</p>
+    <p><b>Map.</b> An ad is placed at its metro station, else its settlement, else its district centre. Metro stations, settlements and base map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.</p>
     <p>“Days listed” runs from when the tracker first saw an ad until it disappeared. Districts marked * are partly inferred from the metro station or settlement in the ad.</p>
   </footer>
 </div>
 
 <script>
-const state = { deal: "sale", building: "all", rooms: "all" };
-let DATA = null;
+"use strict";
+// ---------- state ----------
+const PERIODS = { "3m": 91, "6m": 182, "1y": 365, "2y": 730 };
+const DEFAULT = { deal: "sale", building: "all", rooms: [], period: "1y", source: "all", districts: [], pmin: null, pmax: null, amin: null, amax: null, metric: "ppm2" };
+let state = { ...DEFAULT, rooms: [], districts: [] };
+let DATA = null, X = null;            // raw payload, decoded columns
+let exportId = null, live = false;
 const charts = {};
 let sortKey = "median_ppm2", sortDir = -1;
+const MIN_N = 8;
+const POLL_MS = 5 * 60 * 1000, STALE_HOURS = 14;
 
+// ---------- formatting ----------
 const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const money = v => v == null ? "–" : nf0.format(v) + " ₼";
@@ -248,69 +401,275 @@ const pct = v => v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + nf1.fo
 const signCls = v => v == null || Math.abs(v) < 0.05 ? "" : (v > 0 ? "pos" : "neg");
 const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const narrow = () => window.innerWidth < 600;
 const ROOMS = { "1": "1 room", "2": "2 rooms", "3": "3 rooms", "4": "4+ rooms" };
 const FLOORS = { first: "First floor", middle: "Middle floors", top: "Top floor" };
-const narrow = () => window.innerWidth < 600;
-const fmtDate = iso => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+let EPOCH = Date.UTC(2024, 0, 1);
+const dayDate = d => new Date(EPOCH + d * 864e5);
+const fmtDay = d => dayDate(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+const fmtDayY = d => dayDate(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const fmtMonth = d => dayDate(d).toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
 
-// Live data comes from /api/data (Vercel function reading the newest export in Neon).
-// data.json is the bundled fallback: demo numbers, or a local export when served with http.server.
-let exportId = null, live = false;
-const POLL_MS = 5 * 60 * 1000;
-const STALE_HOURS = 14;   // two missed 6-hourly runs
+// ---------- statistics ----------
+function sorted(arr) { return Float64Array.from(arr).sort(); }
+function q(a, p) { if (!a.length) return null; const i = (a.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i); return a[lo] + (a[hi] - a[lo]) * (i - lo); }
+function median(arr, n = MIN_N) { return arr.length >= n ? q(sorted(arr), .5) : null; }
+const change = (a, b) => a != null && b ? (a / b - 1) * 100 : null;
 
-async function fetchData() {
-  try {
-    const r = await fetch("/api/data", { cache: "no-cache" });
-    if (r.ok) return { data: await r.json(), id: r.headers.get("X-Export-Id"), live: true };
-  } catch (e) { /* no API when served as plain files */ }
-  const r = await fetch("data.json", { cache: "no-store" });
-  if (!r.ok) throw new Error(r.status);
-  return { data: await r.json(), id: null, live: false };
-}
-
-async function poll() {
-  if (!live || document.hidden) return;
-  try {
-    const r = await fetch("/api/status", { cache: "no-cache" });
-    if (!r.ok) return;
-    const s = await r.json();
-    if (s.export_id != null && String(s.export_id) !== exportId) {
-      const next = await fetchData();
-      if (next.live) { DATA = next.data; exportId = next.id; render(); }
-    } else {
-      renderMeta();   // refresh the "x hours ago" text
-    }
-  } catch (e) { /* try again next tick */ }
-}
-
-async function load() {
-  try {
-    const got = await fetchData();
-    DATA = got.data; exportId = got.id; live = got.live;
-  } catch (e) {
-    document.getElementById("updated").textContent = "";
-    showNotice("No data yet. Run python -m analytics.export, then serve this folder with python -m http.server -d dashboard.");
-    document.getElementById("content").hidden = true;
-    return;
+// ---------- data ----------
+function decode(d) {
+  const L = d.L, S = d.S, n = L.src.length;
+  EPOCH = Date.parse(d.meta.epoch + "T00:00:00Z");
+  const key = new Map();
+  for (let i = 0; i < n; i++) key.set(L.src[i] + ":" + L.sid[i], i);
+  const last = new Float64Array(n), firstOrigin = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    last[i] = L.sn[i] ? S.v[L.so[i] + L.sn[i] - 1] : NaN;
+    firstOrigin[i] = L.sn[i] ? S.o[L.so[i]] : 0;
   }
-  setInterval(poll, POLL_MS);
-  document.addEventListener("visibilitychange", poll);
-  document.querySelectorAll(".seg").forEach(g => g.addEventListener("click", e => {
-    const b = e.target.closest("button");
-    if (!b) return;
-    state[g.dataset.key] = b.dataset.v;
-    g.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
-    render();
-  }));
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
-  render();
+  // every price change between consecutive snapshots of one ad
+  const changes = [];
+  for (let i = 0; i < n; i++) {
+    for (let k = L.so[i] + 1; k < L.so[i] + L.sn[i]; k++) {
+      const a = S.v[k - 1], b = S.v[k];
+      if (Math.abs(b - a) < 1) continue;
+      // "precise": both prices from our own scrape, at most two weeks apart, so the date is known
+      const precise = S.o[k] === 0 && S.o[k - 1] === 0 && S.t[k] - S.t[k - 1] <= 14;
+      changes.push({ i, t: S.t[k], old: a, new: b, pct: (b / a - 1) * 100, precise });
+    }
+  }
+  changes.sort((x, y) => y.t - x.t);
+  return { L, S, n, key, last, firstOrigin, changes, today: d.meta.today };
 }
 
-function showNotice(text) {
-  const n = document.getElementById("notice");
-  n.textContent = text;
-  n.hidden = false;
+function priceAt(i, day) {
+  const { L, S } = X;
+  let v = null, o = 0;
+  for (let k = L.so[i]; k < L.so[i] + L.sn[i] && S.t[k] <= day; k++) { v = S.v[k]; o = S.o[k]; }
+  return v == null ? null : { v, o };
+}
+
+const roomBucket = r => r >= 4 ? "4" : r > 0 ? String(r) : null;
+
+// filters apart from deal can be dropped for counterparts (e.g. rent medians for yields)
+function matcher({ deal = state.deal, ignorePrice = false, ignoreDistricts = false } = {}) {
+  const { L, last } = X;
+  const dealCode = deal === "sale" ? 0 : 1;
+  const b = state.building === "all" ? null : state.building === "new" ? 0 : 1;
+  const rooms = new Set(state.rooms);
+  const srcCode = state.source === "all" ? null : DATA.dict.source.indexOf(state.source);
+  const dset = !ignoreDistricts && state.districts.length ? new Set(state.districts.map(d => DATA.dict.district.indexOf(d))) : null;
+  const { pmin, pmax, amin, amax } = state;
+  return i => L.deal[i] === dealCode
+    && (b === null || L.b[i] === b)
+    && (!rooms.size || rooms.has(roomBucket(L.r[i])))
+    && (srcCode === null || L.src[i] === srcCode)
+    && (!dset || dset.has(L.di[i]))
+    && (amin == null || L.a[i] >= amin) && (amax == null || L.a[i] <= amax)
+    && (ignorePrice || ((pmin == null || last[i] >= pmin) && (pmax == null || last[i] <= pmax)));
+}
+
+function buckets(start, today) {
+  const out = [];
+  if (today - start <= 190) {                // weekly
+    for (let be = today; be > start; be -= 7) out.unshift({ bs: be - 6, be, label: fmtDay(be) });
+  } else {                                    // calendar months
+    const s = dayDate(start), e = dayDate(today);
+    for (let y = s.getUTCFullYear(), m = s.getUTCMonth(); y < e.getUTCFullYear() || (y === e.getUTCFullYear() && m <= e.getUTCMonth()); m === 11 ? (y++, m = 0) : m++) {
+      const bs = Math.round((Date.UTC(y, m, 1) - EPOCH) / 864e5);
+      const be = Math.min(today, Math.round((Date.UTC(y, m + 1, 1) - EPOCH) / 864e5) - 1);
+      out.push({ bs, be, label: fmtMonth(bs) });
+    }
+  }
+  return out;
+}
+
+// listings online in a window and their price at its end
+function windowObs(ids, bs, be) {
+  const { L } = X, out = [];
+  for (const i of ids) {
+    if (L.t0[i] > be || L.t1[i] < bs) continue;
+    const p = priceAt(i, be);
+    if (p) out.push({ i, ppm2: p.v / L.a[i], archive: p.o === 1 });
+  }
+  return out;
+}
+
+function series(ids, bks, withDistrictMix = true) {
+  const { L } = X;
+  const rows = bks.map(bk => ({ ...bk, obs: windowObs(ids, bk.bs, bk.be) }));
+  const weight = new Map();
+  let total = 0;
+  if (withDistrictMix) for (const r of rows) for (const o of r.obs) if (L.di[o.i] >= 0) { weight.set(L.di[o.i], (weight.get(L.di[o.i]) || 0) + 1); total++; }
+  return rows.map(r => {
+    const v = r.obs.map(o => o.ppm2), s = sorted(v);
+    let adjusted = null;
+    if (withDistrictMix && total) {
+      const byD = new Map();
+      for (const o of r.obs) if (L.di[o.i] >= 0) (byD.get(L.di[o.i]) || byD.set(L.di[o.i], []).get(L.di[o.i])).push(o.ppm2);
+      let num = 0, cover = 0;
+      for (const [d, arr] of byD) if (arr.length >= 5) { const w = weight.get(d) / total; num += median(arr, 5) * w; cover += w; }
+      if (cover >= .7) adjusted = num / cover;
+    }
+    const by = code => median(r.obs.filter(o => L.b[o.i] === code).map(o => o.ppm2));
+    return { label: r.label, bs: r.bs, be: r.be, n: v.length, median: v.length >= MIN_N ? q(s, .5) : null,
+      p25: v.length >= MIN_N ? q(s, .25) : null, p75: v.length >= MIN_N ? q(s, .75) : null, adjusted,
+      archive: v.length ? r.obs.filter(o => o.archive).length / v.length : 0, new: by(0), old: by(1) };
+  });
+}
+
+function periodChange(rows) {
+  const ok = rows.filter(r => r.median != null);
+  if (ok.length < 2) return null;
+  const a = ok[0], z = ok[ok.length - 1];
+  return a.adjusted && z.adjusted ? change(z.adjusted, a.adjusted) : change(z.median, a.median);
+}
+
+// ---------- compute everything for the current filters ----------
+function compute() {
+  const { L, n, last, today, changes, firstOrigin } = X;
+  const m = matcher();
+  const base = [];
+  for (let i = 0; i < n; i++) if (m(i)) base.push(i);
+  const current = base.filter(i => L.on[i]);
+  const ppm2 = i => last[i] / L.a[i];
+  const P = PERIODS[state.period], start = today - P;
+
+  const rows = series(base, buckets(start, today));
+  const recent = series(base, buckets(today - 34, today), false);
+  const cur = current.map(ppm2), cs = sorted(cur);
+  const inCurrent = new Set(current);
+  const liveSince = DATA.meta.live_since ?? today;
+  // until the scraper has seen the same ads twice there is nothing to measure: show "–", not 0%
+  const watching = X.changes.some(c => c.precise) || today - liveSince >= 7;
+  const cuts30 = changes.filter(c => c.precise && c.pct < 0 && c.t >= today - 30 && inCurrent.has(c.i));
+  const cutIds = new Set(cuts30.map(c => c.i));
+  const gone = base.filter(i => L.gone[i] && !firstOrigin[i] && L.t1[i] >= today - 90).map(i => L.t1[i] - L.t0[i]);
+  const kpi = {
+    active: current.length, median_ppm2: median(cur), p25: cur.length >= MIN_N ? q(cs, .25) : null, p75: cur.length >= MIN_N ? q(cs, .75) : null,
+    median_price: median(current.map(i => last[i])), median_area: median(current.map(i => L.a[i])),
+    change_period: periodChange(rows), change_4w: periodChange(recent),
+    new_7d: today - liveSince >= 8 ? base.filter(i => L.t0[i] >= today - 7 && !firstOrigin[i]).length : null,
+    cuts_30d: cutIds.size, cut_share: watching && current.length ? cutIds.size / current.length * 100 : null,
+    median_cut: median(cuts30.map(c => c.pct), 3), days_listed: median(gone, 10),
+  };
+
+  // rent counterpart for gross yields (sale view only)
+  let rentBy = null;
+  if (state.deal === "sale") {
+    const rm = matcher({ deal: "rent", ignorePrice: true });
+    rentBy = { d: new Map(), p: new Map() };
+    for (let i = 0; i < n; i++) if (L.on[i] && rm(i)) {
+      const v = ppm2(i);
+      if (L.di[i] >= 0) (rentBy.d.get(L.di[i]) || rentBy.d.set(L.di[i], []).get(L.di[i])).push(v);
+      if (L.pl[i] >= 0) (rentBy.p.get(L.pl[i]) || rentBy.p.set(L.pl[i], []).get(L.pl[i])).push(v);
+    }
+  }
+
+  // "then": listings online in the first stretch of the period, priced at its end
+  const W = Math.max(30, Math.round(P / 4));
+  const then = windowObs(base, start, start + W);
+  const group = (arr, keyOf, valOf) => { const g = new Map(); for (const x of arr) { const k = keyOf(x); if (k < 0) continue; (g.get(k) || g.set(k, []).get(k)).push(valOf(x)); } return g; };
+  const nowD = group(current, i => L.di[i], ppm2), thenD = group(then, o => L.di[o.i], o => o.ppm2);
+  const cutsD = group([...cutIds], i => L.di[i], () => 1);
+  const cutPctD = group(cuts30, c => L.di[c.i], c => c.pct);
+
+  const districts = [];
+  for (const [d, v] of nowD) {
+    if (v.length < 3) continue;
+    const ids = current.filter(i => L.di[i] === d);
+    const med = median(v, 3);
+    const row = { district: DATA.dict.district[d], code: d, n: v.length, median_ppm2: med,
+      median_price: median(ids.map(i => last[i]), 3),
+      change: change(med, median(thenD.get(d) || [], 5)),
+      cut_share: watching ? (cutsD.get(d) || []).length / v.length * 100 : null, median_cut: median(cutPctD.get(d) || [], 3),
+      inferred: ids.filter(i => L.dx[i]).length / ids.length * 100 };
+    if (state.building === "all") { row.new_ppm2 = median(ids.filter(i => L.b[i] === 0).map(ppm2), 3); row.old_ppm2 = median(ids.filter(i => L.b[i] === 1).map(ppm2), 3); }
+    if (rentBy) { const r = median(rentBy.d.get(d) || [], 3); row.yield = r && med ? r * 12 / med * 100 : null; }
+    districts.push(row);
+  }
+  districts.sort((a, b) => b.median_ppm2 - a.median_ppm2);
+
+  const top = [...districts].sort((a, b) => b.n - a.n).slice(0, 8);
+  const dtrend = top.map(d => ({ name: d.district, data: series(base.filter(i => L.di[i] === d.code), buckets(start, today), false).map(r => r.median) }));
+
+  // map places
+  const nowP = group(current, i => L.pl[i], ppm2), thenP = group(then, o => L.pl[o.i], o => o.ppm2);
+  const cutsP = group([...cutIds], i => L.pl[i], () => 1);
+  const places = [];
+  for (const [p, v] of nowP) {
+    if (v.length < 3) continue;
+    const med = median(v, 3), pl = DATA.places[p];
+    const thenMed = median(thenP.get(p) || [], 5);
+    const rent = rentBy ? median(rentBy.p.get(p) || [], 3) : null;
+    places.push({ ...pl, idx: p, n: v.length, ppm2: med, change: change(med, thenMed), thenN: (thenP.get(p) || []).length,
+      cuts: watching ? (cutsP.get(p) || []).length / v.length * 100 : null, yield: rent && med ? rent * 12 / med * 100 : null });
+  }
+
+  const metro = [];
+  for (const [mi, v] of group(current, i => L.mi[i], ppm2)) if (v.length >= 3)
+    metro.push({ metro: DATA.dict.metro[mi], n: v.length, median_ppm2: median(v, 3), median_price: median(current.filter(i => L.mi[i] === mi).map(i => last[i]), 3) });
+  metro.sort((a, b) => b.n - a.n);
+
+  const roomsRows = state.rooms.length === 1 ? [] : ["1", "2", "3", "4"].map(r => {
+    const ids = current.filter(i => roomBucket(L.r[i]) === r);
+    return { rooms: r, n: ids.length, median_price: median(ids.map(i => last[i]), 3), median_ppm2: median(ids.map(ppm2), 3) };
+  }).filter(x => x.n >= 3);
+
+  let hist = null;
+  if (cur.length >= 20) {
+    const lo = q(cs, .02), hi = q(cs, .98), bins = 20, w = (hi - lo) / bins, counts = new Array(bins).fill(0);
+    for (const v of cur) if (v >= lo && v <= hi) counts[Math.min(bins - 1, Math.floor((v - lo) / w))]++;
+    hist = { edges: Array.from({ length: bins + 1 }, (_, k) => lo + k * w), counts };
+  }
+
+  const fpos = i => L.ft[i] > 1 && L.fl[i] > 0 ? (L.fl[i] <= 1 ? "first" : L.fl[i] >= L.ft[i] ? "top" : "middle") : null;
+  const floors = ["first", "middle", "top"].map(k => { const v = current.filter(i => fpos(i) === k).map(ppm2); return { position: k, n: v.length, median_ppm2: median(v, 5) }; });
+
+  // weekly cuts and rises (precise changes only)
+  const inBase = new Set(base);
+  const wk = weeksFrom(Math.max(start, liveSince - 1), today);
+  const baseChanges = changes.filter(c => c.precise && inBase.has(c.i));
+  const chgWeeks = wk.map(b => {
+    const g = baseChanges.filter(c => c.t >= b.bs && c.t <= b.be);
+    const online = windowObs(base, b.bs, b.be).length;
+    const cutsN = g.filter(c => c.pct < 0).length;
+    return { label: b.label, cuts: cutsN, rises: g.length - cutsN, cut_rate: online >= MIN_N ? cutsN / online * 100 : null, median_cut: median(g.filter(c => c.pct < 0).map(c => c.pct), 3) };
+  });
+
+  return { base, current, rows, kpi, districts, dtrend, places, metro, roomsRows, hist, floors, chgWeeks, baseChanges, start };
+}
+
+function weeksFrom(start, today) {
+  const out = [];
+  for (let be = today; be > start; be -= 7) out.unshift({ bs: be - 6, be, label: fmtDay(be) });
+  return out;
+}
+
+// ---------- rendering ----------
+let R = null;
+function render() {
+  themeCharts();
+  renderMeta();
+  syncControls();
+  R = compute();
+  const empty = !R.current.length && !R.rows.some(r => r.n);
+  document.getElementById("content").hidden = empty;
+  document.getElementById("empty").hidden = !empty;
+  writeHash();
+  if (empty) return;
+  renderHero();
+  renderTrend();
+  renderMap();
+  renderDistrictBar();
+  renderDistrictTrend();
+  renderDistrictTable();
+  renderRooms();
+  renderHist();
+  renderFloors();
+  renderChangeTrend();
+  renderChanges();
+  renderMetro();
 }
 
 function mk(id, cfg) {
@@ -332,26 +691,7 @@ function themeCharts() {
   Chart.defaults.plugins.tooltip.bodyColor = cssv("--bg");
 }
 
-function render() {
-  themeCharts();
-  renderMeta();
-  const seg = DATA.segments && DATA.segments[`${state.deal}|${state.building}|${state.rooms}`];
-  const empty = !seg || !seg.kpi || !seg.kpi.active;
-  document.getElementById("content").hidden = empty;
-  document.getElementById("empty").hidden = !empty;
-  if (empty) return;
-  renderHero(seg);
-  renderTrend(seg);
-  renderDistrictBar(seg);
-  renderDistrictTrend(seg);
-  renderDistrictTable(seg);
-  renderRooms(seg);
-  renderHist(seg);
-  renderFloors(seg);
-  renderChangeTrend(seg);
-  renderChanges();
-  renderMetro(seg);
-}
+function showNotice(text) { const n = document.getElementById("notice"); n.textContent = text; n.hidden = false; }
 
 function ago(date) {
   const h = (Date.now() - date) / 36e5;
@@ -367,93 +707,181 @@ function renderMeta() {
   const stamp = when ? when.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "";
   document.getElementById("updated").innerHTML = when
     ? `<span class="live ${live && hoursOld < STALE_HOURS ? "" : "off"}">${live ? "Live" : "Snapshot"}</span>`
-      + `Updated ${esc(ago(when))} (${esc(stamp)}), ${nf0.format(m.listings_tracked || 0)} listings tracked`
+      + `Updated ${esc(ago(when))} (${esc(stamp)}), ${nf0.format(m.online_now || 0)} listings online, ${nf0.format(m.listings_tracked || 0)} tracked`
     : "";
   document.getElementById("notice").hidden = true;
   if (m.demo) showNotice("Demo data. These numbers are invented so you can see the layout. They’re replaced after the first real scrape.");
   else if (m.empty) showNotice("No listings stored yet. Run the scraper, then the export.");
   else if (hoursOld != null && hoursOld > STALE_HOURS) showNotice(`The last update was ${ago(when)}. Scrapes run every 6 hours, so a run has probably failed. Check the GitHub Actions log.`);
+  if (m.live_since != null) document.getElementById("f-live").textContent = fmtDayY(m.live_since);
   document.getElementById("sources").innerHTML = (DATA.sources || []).map(s => {
     const ok = s.last_status === "ok";
-    const last = s.last_ok ? fmtDate(s.last_ok + "Z") : "never";
+    const last = s.last_ok ? new Date(s.last_ok + "Z").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "never";
     return `<span class="src" title="${esc(s.last_error || "")}"><span class="dot ${ok ? "" : "err"}"></span>${esc(s.source)}: ${nf0.format(s.active)} live, last OK ${esc(last)}</span>`;
   }).join("");
 }
 
-function renderHero(seg) {
-  const k = seg.kpi, rent = state.deal === "rent";
+const periodText = () => ({ "3m": "3 months", "6m": "6 months", "1y": "a year", "2y": "2 years" }[state.period]);
+
+function renderHero() {
+  const k = R.kpi, rent = state.deal === "rent";
   document.getElementById("hero-label").textContent = rent ? "Median asking rent per m², per month" : "Median asking price per m²";
-  document.getElementById("hero-value").innerHTML = `${rent ? nf1.format(k.median_ppm2) : nf0.format(k.median_ppm2)}<small>₼/m²</small>`;
-  document.getElementById("hero-chips").innerHTML = [
-    [k.change_4w, "in 4 weeks"], [k.change_12w, "in 12 weeks"]
-  ].map(([v, t]) => `<span class="chip"><b class="${signCls(v)}">${pct(v)}</b> ${t}</span>`).join("")
-    + `<span class="chip">Middle half ${perM2(k.p25_ppm2)} to ${perM2(k.p75_ppm2)}</span>`;
+  document.getElementById("hero-value").innerHTML = k.median_ppm2 == null ? "–" : `${rent ? nf1.format(k.median_ppm2) : nf0.format(k.median_ppm2)}<small>₼/m²</small>`;
+  document.getElementById("hero-chips").innerHTML = [[k.change_4w, "in 4 weeks"], [k.change_period, `in ${periodText()}`]]
+    .map(([v, t]) => `<span class="chip"><b class="${signCls(v)}">${pct(v)}</b> ${t}</span>`).join("")
+    + `<span class="chip">Middle half ${perM2(k.p25)} to ${perM2(k.p75)}</span>`;
   const stats = [
     [rent ? "Median rent" : "Median price", money(k.median_price), rent ? "per month" : ""],
     ["Listings online", nf0.format(k.active), ""],
-    ["New in 7 days", nf0.format(k.new_7d), ""],
-    ["Cut price in 30 days", k.cut_share_30d == null ? "–" : nf1.format(k.cut_share_30d) + "%", `${nf0.format(k.cuts_30d)} ads`],
-    ["Typical cut", pct(k.median_cut_pct), ""],
-    ["Median days listed", k.median_days_listed == null ? "–" : nf0.format(k.median_days_listed), "days"],
+    ["New in 7 days", k.new_7d == null ? "–" : nf0.format(k.new_7d), ""],
+    ["Cut price in 30 days", k.cut_share == null ? "–" : nf1.format(k.cut_share) + "%", k.cut_share == null ? "" : `${nf0.format(k.cuts_30d)} ads`],
+    ["Typical cut", pct(k.median_cut), ""],
+    ["Median days listed", k.days_listed == null ? "–" : nf0.format(k.days_listed), k.days_listed == null ? "" : "days"],
   ];
   document.getElementById("stats").innerHTML = stats.map(([t, v, s]) => `<div><dt>${t}</dt><dd>${v}${s ? `<span>${s}</span>` : ""}</dd></div>`).join("");
 }
 
-function trimTrend(trend) {
-  const i = trend.findIndex(t => t.n > 0);
-  return i < 0 ? [] : trend.slice(i);
-}
-
-function renderTrend(seg) {
-  const t = trimTrend(seg.trend);
-  const labels = t.map(x => fmtDate(x.week));
+function renderTrend() {
+  const t = R.rows;
   const accent = cssv("--accent");
+  const dashed = ctx => { const a = t[ctx.p0DataIndex], b = t[ctx.p1DataIndex]; return (a && a.archive > .5) || (b && b.archive > .5) ? [5, 4] : undefined; };
   const ds = [
     { label: "", data: t.map(x => x.p25), borderWidth: 0, pointRadius: 0, fill: false },
     { label: "Middle half of listings", data: t.map(x => x.p75), borderWidth: 0, pointRadius: 0, fill: "-1", backgroundColor: cssv("--accent-soft") },
-    { label: "Median", data: t.map(x => x.median), borderColor: accent, backgroundColor: accent, borderWidth: 2.5, pointRadius: 0, tension: .25 },
-    { label: "Mix-adjusted", data: t.map(x => x.adjusted), borderColor: cssv("--ink"), backgroundColor: cssv("--ink"), borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, tension: .25 },
+    { label: "Median", data: t.map(x => x.median), borderColor: accent, backgroundColor: accent, borderWidth: 2.5, pointRadius: t.length > 40 ? 0 : 2, tension: .25, segment: { borderDash: dashed } },
+    { label: "Mix-adjusted", data: t.map(x => x.adjusted), borderColor: cssv("--ink"), backgroundColor: cssv("--ink"), borderWidth: 1.5, borderDash: [2, 3], pointRadius: 0, tension: .25 },
   ];
   if (state.building === "all") {
     ds.push({ label: "New build", data: t.map(x => x.new), borderColor: cssv("--new"), backgroundColor: cssv("--new"), borderWidth: 1.5, pointRadius: 0, tension: .25, hidden: true });
     ds.push({ label: "Old build", data: t.map(x => x.old), borderColor: cssv("--sand"), backgroundColor: cssv("--sand"), borderWidth: 1.5, pointRadius: 0, tension: .25, hidden: true });
   }
   mk("c-trend", {
-    type: "line", data: { labels, datasets: ds },
+    type: "line", data: { labels: t.map(x => x.label), datasets: ds },
     options: {
-      interaction: { mode: "index", intersect: false }, spanGaps: true,
+      interaction: { mode: "index", intersect: false }, spanGaps: false,
       plugins: {
         legend: { position: "bottom", labels: { filter: i => i.text !== "" } },
         tooltip: { filter: i => i.dataset.label !== "", callbacks: {
           label: c => `${c.dataset.label === "Middle half of listings" ? "75th percentile" : c.dataset.label}: ${perM2(c.parsed.y)}`,
-          afterBody: items => `Listings: ${nf0.format(t[items[0].dataIndex].n)}` } }
+          afterBody: items => { const r = t[items[0].dataIndex]; return `Listings: ${nf0.format(r.n)}${r.archive > .5 ? " (archived ads sample)" : ""}`; } } }
       },
-      scales: { y: { ticks: { callback: v => perM2(v) } }, x: { ticks: { maxTicksLimit: narrow() ? 5 : 10, maxRotation: 0 } } }
+      scales: { y: { ticks: { callback: v => perM2(v) } }, x: { ticks: { maxTicksLimit: narrow() ? 5 : 12, maxRotation: 0 } } }
     }
   });
+  const weekly = PERIODS[state.period] <= 182;
+  const arch = t.filter(r => r.archive > .5 && r.n);
+  const gaps = t.filter(r => r.median == null).length;
+  document.getElementById("trend-sub").textContent = `${weekly ? "Weekly" : "Monthly"} median of listings online, the middle half of listings as a band, and a mix-adjusted line that holds the district mix fixed.`;
+  document.getElementById("trend-note").textContent = [
+    arch.length ? `Dashed: ${weekly ? "weeks" : "months"} based on archived bina.az ads (archive.org), about ${nf0.format(median(arch.map(r => r.n), 1))} ads each.` : "",
+    gaps ? `Gaps: fewer than ${MIN_N} matching ads, so no median is shown.` : "",
+  ].filter(Boolean).join(" ");
 }
 
-function renderDistrictBar(seg) {
-  const d = [...seg.districts].filter(x => x.median_ppm2 != null).sort((a, b) => b.median_ppm2 - a.median_ppm2);
+// ---------- map ----------
+let map = null, layer = null, tiles = null, tileDark = null;
+function darkMode() {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+}
+function ensureMap() {
+  if (map || typeof L === "undefined") return;
+  map = L.map("map", { scrollWheelZoom: false, zoomSnap: .5 }).setView([40.41, 49.88], 11);
+  layer = L.layerGroup().addTo(map);
+}
+function setTiles() {
+  const dark = darkMode();
+  if (tiles && tileDark === dark) return;
+  if (tiles) tiles.remove();
+  tileDark = dark;
+  tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
+  document.getElementById("map").classList.toggle("dark-tiles", dark);
+}
+
+function mix(c1, c2, t) {
+  const h = c => c.replace("#", "").match(/../g).map(x => parseInt(x, 16));
+  const a = h(c1), b = h(c2);
+  return "#" + a.map((v, k) => Math.round(v + (b[k] - v) * t).toString(16).padStart(2, "0")).join("");
+}
+
+const METRICS = {
+  ppm2: { title: "Median price per m²", val: p => p.ppm2, fmt: v => perM2(v), diverging: false },
+  change: { title: "Change over the period", val: p => p.change, fmt: pct, diverging: true },
+  cuts: { title: "Share that cut price, 30 days", val: p => p.cuts, fmt: v => v == null ? "–" : nf0.format(v) + "%", diverging: false },
+  yield: { title: "Gross rental yield", val: p => p.yield, fmt: v => v == null ? "–" : nf1.format(v) + "%", diverging: false },
+  n: { title: "Listings online", val: p => p.n, fmt: v => nf0.format(v), diverging: false },
+};
+
+function renderMap() {
+  ensureMap();
+  if (!map) { document.getElementById("map").textContent = "The map library didn’t load."; return; }
+  setTiles();
+  const yieldOpt = document.querySelector('#map-metric option[value="yield"]');
+  yieldOpt.disabled = state.deal !== "sale";
+  if (state.metric === "yield" && state.deal !== "sale") state.metric = "ppm2";
+  document.getElementById("map-metric").value = state.metric;
+  const M = METRICS[state.metric];
+  const pts = R.places;
+  const vals = pts.map(M.val).filter(v => v != null).sort((a, b) => a - b);
+  let lo = q(vals, .05) ?? 0, hi = q(vals, .95) ?? 1;
+  if (M.diverging) { const e = Math.max(Math.abs(lo), Math.abs(hi), 1); lo = -e; hi = e; }
+  const c0 = cssv("--seq-0"), c1 = cssv("--seq-1"), up = cssv("--up"), down = cssv("--down"), mid = cssv("--neutral");
+  const color = v => {
+    if (v == null) return cssv("--line");
+    if (M.diverging) return v >= 0 ? mix(mid, up, Math.min(1, v / hi)) : mix(mid, down, Math.min(1, v / lo));
+    return mix(c0, c1, hi > lo ? Math.min(1, Math.max(0, (v - lo) / (hi - lo))) : .5);
+  };
+  layer.clearLayers();
+  const maxN = Math.max(1, ...pts.map(p => p.n));
+  for (const p of [...pts].sort((a, b) => b.n - a.n)) {
+    const v = M.val(p);
+    const kind = { metro: "metro station", settlement: "settlement", district: "district (no closer location in the ad)" }[p.kind];
+    const html = `<div class="pop"><b>${esc(p.name)}</b> <span class="k">${kind}</span><br>`
+      + `${nf0.format(p.n)} listings online · ${perM2(p.ppm2)}/m²<br>`
+      + `<span class="k">Change over ${periodText()}:</span> <span class="${signCls(p.change)}">${pct(p.change)}</span>${p.change == null ? ' <span class="k">(too few ads then)</span>' : ""}<br>`
+      + `<span class="k">Cut price in 30 days:</span> ${p.cuts == null ? "–" : nf0.format(p.cuts) + "%"}`
+      + (p.yield != null ? `<br><span class="k">Gross yield:</span> ${nf1.format(p.yield)}%` : "")
+      + (p.kind === "district" ? `<br><button class="linkbtn" data-district="${esc(p.name)}">Show only ${esc(p.name)}</button>` : "") + "</div>";
+    L.circleMarker([p.lat, p.lng], { radius: 5 + 20 * Math.sqrt(p.n / maxN), color: cssv("--surface"), weight: 1.2, fillColor: color(v), fillOpacity: v == null ? .55 : .88 })
+      .bindPopup(html).bindTooltip(`${p.name}: ${M.fmt(v)}`, { direction: "top" }).addTo(layer);
+  }
+  document.getElementById("scale-title").textContent = M.title;
+  document.getElementById("scale").style.background = M.diverging
+    ? `linear-gradient(90deg, ${down}, ${mid}, ${up})` : `linear-gradient(90deg, ${c0}, ${c1})`;
+  document.getElementById("scale-lo").textContent = vals.length ? M.fmt(lo) : "";
+  document.getElementById("scale-hi").textContent = vals.length ? M.fmt(hi) : "";
+  const unplaced = R.current.filter(i => X.L.pl[i] < 0).length;
+  const blank = pts.length - pts.filter(p => M.val(p) != null).length;
+  document.getElementById("map-note").textContent = `${nf0.format(pts.length)} places with 3 or more listings.`
+    + (blank ? ` Grey: ${nf0.format(blank)} without enough data for this measure${state.metric === "change" ? " (too few ads at the start of the period)" : ""}.` : "")
+    + (unplaced ? ` ${nf0.format(unplaced)} listings name no known place and aren’t on the map.` : "");
+  const movers = R.places.filter(p => p.change != null && p.thenN >= 5);
+  const li = p => `<li data-lat="${p.lat}" data-lng="${p.lng}"><span class="nm">${esc(p.name)}</span><span class="${signCls(p.change)}">${pct(p.change)}</span></li>`;
+  document.getElementById("movers-up").innerHTML = movers.filter(p => p.change > 0).sort((a, b) => b.change - a.change).slice(0, 5).map(li).join("") || '<li class="k">Not enough history yet</li>';
+  document.getElementById("movers-down").innerHTML = movers.filter(p => p.change < 0).sort((a, b) => a.change - b.change).slice(0, 5).map(li).join("") || '<li class="k">Not enough history yet</li>';
+}
+
+function renderDistrictBar() {
+  const d = R.districts.filter(x => x.median_ppm2 != null);
   document.getElementById("c-district-box").style.height = Math.max(200, d.length * 26 + 30) + "px";
+  const sel = new Set(state.districts);
   mk("c-district", {
     type: "bar",
-    data: { labels: d.map(x => x.district + (x.inferred_share >= 25 ? " *" : "")), datasets: [{ data: d.map(x => x.median_ppm2), backgroundColor: cssv("--accent"), borderRadius: 3, barPercentage: .8 }] },
-    options: { indexAxis: "y", plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${perM2(c.parsed.x)}, ${nf0.format(d[c.dataIndex].n)} listings` } } },
+    data: { labels: d.map(x => x.district + (x.inferred >= 25 ? " *" : "")), datasets: [{ data: d.map(x => x.median_ppm2), backgroundColor: d.map(x => !sel.size || sel.has(x.district) ? cssv("--accent") : cssv("--line")), borderRadius: 3, barPercentage: .8 }] },
+    options: { indexAxis: "y", onClick: (e, els) => { if (els.length) toggleDistrict(d[els[0].index].district); },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${perM2(c.parsed.x)}, ${nf0.format(d[c.dataIndex].n)} listings` } } },
       scales: { x: { ticks: { callback: v => perM2(v), maxTicksLimit: 5 } }, y: { grid: { display: false } } } }
   });
 }
 
-function renderDistrictTrend(seg) {
-  const weeks = DATA.meta.weeks || [];
-  const names = Object.keys(seg.district_trend || {});
-  const first = Math.max(0, weeks.findIndex((_, i) => names.some(n => seg.district_trend[n][i] != null)));
+function renderDistrictTrend() {
+  const labels = R.rows.map(r => r.label);
   const palette = [1, 2, 3, 4, 5, 6, 7, 8].map(i => cssv(`--c${i}`));
   mk("c-dtrend", {
     type: "line",
-    data: { labels: weeks.slice(first).map(fmtDate), datasets: names.map((n, i) => ({
-      label: n, data: seg.district_trend[n].slice(first), borderColor: palette[i % 8], backgroundColor: palette[i % 8],
-      borderWidth: 1.8, pointRadius: 0, tension: .25, spanGaps: true })) },
+    data: { labels, datasets: R.dtrend.map((d, i) => ({ label: d.name, data: d.data, borderColor: palette[i % 8], backgroundColor: palette[i % 8], borderWidth: 1.8, pointRadius: 0, tension: .25, spanGaps: true })) },
     options: { interaction: { mode: "nearest", intersect: false },
       plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${perM2(c.parsed.y)}` } } },
       scales: { y: { ticks: { callback: v => perM2(v) } }, x: { ticks: { maxTicksLimit: narrow() ? 4 : 6, maxRotation: 0 } } } }
@@ -462,48 +890,63 @@ function renderDistrictTrend(seg) {
 
 function districtColumns() {
   const cols = [
-    { k: "district", t: "District", f: (v, r) => esc(v) + (r.inferred_share >= 25 ? '<span class="note">*</span>' : "") },
+    { k: "district", t: "District", f: (v, r) => `<button class="rowlink" data-district="${esc(v)}">${esc(v)}</button>` + (r.inferred >= 25 ? '<span class="note">*</span>' : ""), csv: v => v },
     { k: "n", t: "Listings", f: v => nf0.format(v) },
     { k: "median_price", t: state.deal === "rent" ? "Median rent" : "Median price", f: money },
     { k: "median_ppm2", t: "Per m²", f: perM2 },
-    { k: "change_4w", t: "4-week change", f: v => `<span class="${signCls(v)}">${pct(v)}</span>` },
-    { k: "cut_share_30d", t: "Cut in 30 days", f: v => v == null ? "–" : nf0.format(v) + "%" },
-    { k: "median_cut_pct", t: "Typical cut", f: pct },
+    { k: "change", t: `Change, ${periodText()}`, f: v => `<span class="${signCls(v)}">${pct(v)}</span>` },
+    { k: "cut_share", t: "Cut in 30 days", f: v => v == null ? "–" : nf0.format(v) + "%" },
+    { k: "median_cut", t: "Typical cut", f: pct },
   ];
   if (state.building === "all") cols.push({ k: "new_ppm2", t: "New build per m²", f: perM2 }, { k: "old_ppm2", t: "Old build per m²", f: perM2 });
-  if (state.deal === "sale") cols.push({ k: "gross_yield", t: "Gross rental yield", f: v => v == null ? "–" : nf1.format(v) + "%" });
+  if (state.deal === "sale") cols.push({ k: "yield", t: "Gross rental yield", f: v => v == null ? "–" : nf1.format(v) + "%" });
   return cols;
 }
 
-function renderDistrictTable(seg) {
+function districtRows() {
   const cols = districtColumns();
   if (!cols.some(c => c.k === sortKey)) { sortKey = "median_ppm2"; sortDir = -1; }
-  const rows = [...seg.districts].sort((a, b) => {
+  return [...R.districts].sort((a, b) => {
     const x = a[sortKey], y = b[sortKey];
     if (x == null) return 1; if (y == null) return -1;
     return (typeof x === "string" ? x.localeCompare(y, "az") : x - y) * sortDir;
   });
-  document.getElementById("district-sub").textContent = state.deal === "sale"
-    ? "Gross rental yield is a year of median rent per m² divided by median sale price per m², same rooms filter. Select a heading to sort."
-    : "Select a column heading to sort.";
+}
+
+function renderDistrictTable() {
+  const cols = districtColumns(), rows = districtRows();
+  document.getElementById("district-sub").textContent = (state.deal === "sale"
+    ? "Gross rental yield is a year of median rent per m² divided by median sale price per m², same filters. " : "")
+    + `Change compares listings online now with those online in the first weeks of the period. Select a district to filter.`;
   const t = document.getElementById("t-district");
   t.innerHTML = `<thead><tr>${cols.map(c => `<th ${c.k === sortKey ? `aria-sort="${sortDir > 0 ? "ascending" : "descending"}"` : ""}><button data-k="${c.k}">${c.t}${c.k === sortKey ? (sortDir > 0 ? " ↑" : " ↓") : ""}</button></th>`).join("")}</tr></thead>`
     + `<tbody>${rows.map(r => `<tr>${cols.map(c => `<td>${c.f(r[c.k], r)}</td>`).join("")}</tr>`).join("")}</tbody>`;
   t.querySelectorAll("th button").forEach(b => b.addEventListener("click", () => {
     if (sortKey === b.dataset.k) sortDir *= -1; else { sortKey = b.dataset.k; sortDir = b.dataset.k === "district" ? 1 : -1; }
-    renderDistrictTable(seg);
+    renderDistrictTable();
   }));
 }
 
-function renderRooms(seg) {
-  const box = document.getElementById("c-rooms-box");
-  const panel = box.closest(".panel");
-  panel.hidden = !seg.rooms.length;
-  if (!seg.rooms.length) return;
+function downloadCsv() {
+  const cols = districtColumns(), rows = districtRows();
+  const cell = v => v == null ? "" : typeof v === "number" ? (Math.round(v * 100) / 100).toString() : `"${String(v).replace(/"/g, '""')}"`;
+  const csv = [cols.map(c => cell(c.t)).join(","), ...rows.map(r => cols.map(c => cell(r[c.k])).join(","))].join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
+  a.download = `baku-${state.deal}-districts-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function renderRooms() {
+  const panel = document.getElementById("c-rooms-box").closest(".panel");
+  panel.hidden = !R.roomsRows.length;
+  if (!R.roomsRows.length) return;
+  const rr = R.roomsRows;
   mk("c-rooms", {
-    data: { labels: seg.rooms.map(r => r.rooms === "4" ? "4+" : r.rooms), datasets: [
-      { type: "bar", label: state.deal === "rent" ? "Median rent" : "Median price", data: seg.rooms.map(r => r.median_price), backgroundColor: cssv("--accent"), borderRadius: 3, yAxisID: "y" },
-      { type: "line", label: "Per m²", data: seg.rooms.map(r => r.median_ppm2), borderColor: cssv("--sand"), backgroundColor: cssv("--sand"), borderWidth: 2, pointRadius: 3, yAxisID: "y1" },
+    data: { labels: rr.map(r => r.rooms === "4" ? "4+" : r.rooms), datasets: [
+      { type: "bar", label: state.deal === "rent" ? "Median rent" : "Median price", data: rr.map(r => r.median_price), backgroundColor: cssv("--accent"), borderRadius: 3, yAxisID: "y" },
+      { type: "line", label: "Per m²", data: rr.map(r => r.median_ppm2), borderColor: cssv("--sand"), backgroundColor: cssv("--sand"), borderWidth: 2, pointRadius: 3, yAxisID: "y1" },
     ] },
     options: { plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.dataset.yAxisID === "y" ? money(c.parsed.y) : perM2(c.parsed.y)}` } } },
       scales: { x: { title: { display: true, text: "Rooms" }, grid: { display: false }, ticks: { maxRotation: 0 } },
@@ -512,22 +955,21 @@ function renderRooms(seg) {
   });
 }
 
-function renderHist(seg) {
-  const h = seg.hist;
+function renderHist() {
+  const h = R.hist;
   if (!h) { mk("c-hist", { type: "bar", data: { labels: [], datasets: [] } }); return; }
-  const labels = h.counts.map((_, i) => perM2(h.edges[i]));
   mk("c-hist", {
     type: "bar",
-    data: { labels, datasets: [{ data: h.counts, backgroundColor: cssv("--accent"), barPercentage: 1, categoryPercentage: .92 }] },
+    data: { labels: h.counts.map((_, i) => perM2(h.edges[i])), datasets: [{ data: h.counts, backgroundColor: cssv("--accent"), barPercentage: 1, categoryPercentage: .92 }] },
     options: { plugins: { legend: { display: false }, tooltip: { callbacks: {
       title: i => `${perM2(h.edges[i[0].dataIndex])} to ${perM2(h.edges[i[0].dataIndex + 1])}`, label: c => `${nf0.format(c.parsed.y)} listings` } } },
       scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 5, maxRotation: 0 } }, y: { ticks: { maxTicksLimit: 5 } } } }
   });
 }
 
-function renderFloors(seg) {
-  const f = seg.floors.filter(x => x.median_ppm2 != null);
-  const mid = (seg.floors.find(x => x.position === "middle") || {}).median_ppm2;
+function renderFloors() {
+  const f = R.floors.filter(x => x.median_ppm2 != null);
+  const mid = (R.floors.find(x => x.position === "middle") || {}).median_ppm2;
   const lo = f.length ? Math.min(...f.map(x => x.median_ppm2)) : 0;
   mk("c-floor", {
     type: "bar",
@@ -541,53 +983,260 @@ function renderFloors(seg) {
   });
 }
 
-function renderChangeTrend(seg) {
-  const all = seg.change_trend || [];
+function renderChangeTrend() {
+  const all = R.chgWeeks;
   const i = all.findIndex(x => x.cuts || x.rises);
   const t = i < 0 ? [] : all.slice(i);
-  document.getElementById("c-chg-box").closest(".panel").hidden = !t.length;
+  document.getElementById("c-chg-box").hidden = !t.length;
+  document.getElementById("c-chg-empty").hidden = !!t.length;
   if (!t.length) return;
   mk("c-chg", {
-    data: { labels: t.map(x => fmtDate(x.week)), datasets: [
+    data: { labels: t.map(x => x.label), datasets: [
       { type: "bar", label: "Cuts", data: t.map(x => x.cuts), backgroundColor: cssv("--down"), borderRadius: 2, stack: "n", yAxisID: "y" },
       { type: "bar", label: "Rises", data: t.map(x => x.rises), backgroundColor: cssv("--up"), borderRadius: 2, stack: "n", yAxisID: "y" },
-      { type: "line", label: "Share of listings cut", data: t.map(x => x.cut_rate), borderColor: cssv("--ink"), backgroundColor: cssv("--ink"),
-        borderWidth: 1.5, pointRadius: 0, tension: .25, spanGaps: true, yAxisID: "y1" },
+      { type: "line", label: "Share of listings cut", data: t.map(x => x.cut_rate), borderColor: cssv("--ink"), backgroundColor: cssv("--ink"), borderWidth: 1.5, pointRadius: 0, tension: .25, spanGaps: true, yAxisID: "y1" },
     ] },
     options: { interaction: { mode: "index", intersect: false },
       plugins: { legend: { position: "bottom" }, tooltip: { callbacks: {
         label: c => c.dataset.yAxisID === "y1" ? `${c.dataset.label}: ${c.parsed.y == null ? "–" : nf1.format(c.parsed.y) + "%"}` : `${c.dataset.label}: ${nf0.format(c.parsed.y)}`,
-        afterBody: items => { const m = t[items[0].dataIndex].median_cut_pct; return m == null ? "" : `Typical cut: ${pct(m)}`; } } } },
+        afterBody: items => { const m = t[items[0].dataIndex].median_cut; return m == null ? "" : `Typical cut: ${pct(m)}`; } } } },
       scales: { x: { stacked: true, grid: { display: false }, ticks: { maxTicksLimit: narrow() ? 5 : 10, maxRotation: 0 } },
                 y: { stacked: true, title: { display: !narrow(), text: "Ads" }, ticks: { maxTicksLimit: 5 } },
                 y1: { position: "right", min: 0, grid: { display: false }, ticks: { callback: v => nf0.format(v) + "%", maxTicksLimit: 5 } } } }
   });
 }
 
+const adUrl = i => X.L.src[i] === 0 ? `https://bina.az/items/${X.L.sid[i]}` : DATA.urls[i] || null;
+function describe(i) {
+  const { L } = X;
+  const where = [L.di[i] >= 0 ? DATA.dict.district[L.di[i]] : null, L.mi[i] >= 0 ? DATA.dict.metro[L.mi[i]] : null].filter(Boolean).join(", ");
+  return [L.r[i] ? ROOMS[roomBucket(L.r[i])] : null, nf0.format(L.a[i]) + " m²", where].filter(Boolean).join(", ");
+}
+
 function renderChanges() {
-  const list = (DATA.changes || []).filter(c => c.deal === state.deal
-    && (state.building === "all" || c.building === state.building)
-    && (state.rooms === "all" || c.rooms_bucket === state.rooms));
+  const list = R.baseChanges;
   const cuts = list.filter(c => c.pct < 0).length;
   document.getElementById("tally").textContent = list.length
-    ? `${nf0.format(cuts)} cuts and ${nf0.format(list.length - cuts)} rises among the latest ${nf0.format(list.length)} changes.`
-    : "No price changes recorded for these filters yet.";
+    ? `${nf0.format(cuts)} cuts and ${nf0.format(list.length - cuts)} rises seen by the scraper for these filters.`
+    : "No price changes seen yet for these filters. They appear once the same ads have been scraped more than once.";
   document.getElementById("changes").innerHTML = list.slice(0, 40).map(c => {
-    const where = [c.district, c.metro].filter(Boolean).join(", ");
-    const what = [c.rooms ? ROOMS[c.rooms >= 4 ? "4" : String(c.rooms)] : null, c.area ? nf0.format(c.area) + " m²" : null, where].filter(Boolean).join(", ");
-    return `<li><a href="${esc(c.url)}" target="_blank" rel="noopener">
-      <span class="p ${signCls(c.pct)}">${pct(c.pct)}</span>
-      <span class="what">${esc(what)}<span class="prices">${money(c.old)} to ${money(c.new)}</span></span>
-      <span class="when">${fmtDate(c.date)}<br>${esc(c.source)}</span></a></li>`;
+    const url = adUrl(c.i);
+    const inner = `<span class="p ${signCls(c.pct)}">${pct(c.pct)}</span>
+      <span class="what">${esc(describe(c.i))}<span class="prices">${money(c.old)} to ${money(c.new)}</span></span>
+      <span class="when">${fmtDay(c.t)}<br>${esc(DATA.dict.source[X.L.src[c.i]])}</span>`;
+    return `<li>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${inner}</a>` : `<div class="row-x">${inner}</div>`}</li>`;
   }).join("");
 }
 
-function renderMetro(seg) {
+function renderMetro() {
   const t = document.getElementById("t-metro");
-  if (!seg.metro.length) { t.innerHTML = `<tbody><tr><td class="empty">No stations named often enough yet.</td></tr></tbody>`; return; }
+  if (!R.metro.length) { t.innerHTML = `<tbody><tr><td class="empty">No stations named often enough yet.</td></tr></tbody>`; return; }
   t.innerHTML = `<thead><tr><th>Station</th><th>Listings</th><th>Per m²</th><th>${state.deal === "rent" ? "Median rent" : "Median price"}</th></tr></thead><tbody>`
-    + seg.metro.map(m => `<tr><td>${esc(m.metro)}</td><td>${nf0.format(m.n)}</td><td>${perM2(m.median_ppm2)}</td><td>${money(m.median_price)}</td></tr>`).join("")
+    + R.metro.slice(0, 20).map(m => `<tr><td>${esc(m.metro)}</td><td>${nf0.format(m.n)}</td><td>${perM2(m.median_ppm2)}</td><td>${money(m.median_price)}</td></tr>`).join("")
     + "</tbody>";
+}
+
+// ---------- check a listing ----------
+function checkListing(raw) {
+  const out = document.getElementById("check-out");
+  const s = (raw || "").trim();
+  let key = null;
+  let m = s.match(/bina\.az\/items\/(\d+)/) || s.match(/^(\d{6,8})$/);
+  if (m) key = "0:" + m[1];
+  else if ((m = s.match(/yeniemlak\.az\/elan\/[^?#]*?-(\d{4,})/))) key = "1:" + m[1];
+  if (!key) { out.innerHTML = `<p class="empty">That doesn’t look like a bina.az (…/items/1234567) or yeniemlak.az ad link.</p>`; return; }
+  const i = X.key.get(key);
+  if (i == null) { out.innerHTML = `<p class="empty">This ad isn’t in the data. The scraper reads the newest ads in each section, so older ads that haven’t changed may be missing.</p>`; return; }
+  const { L, S, last, today } = X;
+  const ppm2 = last[i] / L.a[i];
+  const deal = L.deal[i] === 0 ? "sale" : "rent";
+  // comparables: online now, same deal, district, rooms bucket and building type
+  const comp = [];
+  for (let j = 0; j < X.n; j++) if (j !== i && L.on[j] && L.deal[j] === L.deal[i] && L.di[j] === L.di[i] && roomBucket(L.r[j]) === roomBucket(L.r[i]) && (L.b[i] < 0 || L.b[j] === L.b[i])) comp.push(last[j] / L.a[j]);
+  const cm = median(comp, 5);
+  const diff = change(ppm2, cm);
+  const hist = [];
+  for (let k = L.so[i]; k < L.so[i] + L.sn[i]; k++) hist.push({ t: S.t[k], v: S.v[k], o: S.o[k] });
+  const firstP = hist[0].v, rentFmt = v => deal === "rent" ? nf1.format(v) + " ₼" : nf0.format(v) + " ₼";
+  const url = adUrl(i);
+  out.innerHTML = `<div class="verdict"><div>
+      <p class="big">${money(last[i])}${deal === "rent" ? " <span class='note'>per month</span>" : ""}</p>
+      <dl>
+        <dt>Flat</dt><dd>${esc(describe(i))}${L.b[i] >= 0 ? `, ${L.b[i] === 0 ? "new" : "old"} build` : ""}</dd>
+        <dt>Per m²</dt><dd>${rentFmt(ppm2)}</dd>
+        <dt>Similar flats</dt><dd>${cm == null ? "too few to compare" : `${rentFmt(cm)} median of ${nf0.format(comp.length)} <span class="${signCls(diff)}">(${pct(diff)})</span>`}</dd>
+        <dt>Since first seen</dt><dd><span class="${signCls(change(last[i], firstP))}">${pct(change(last[i], firstP))}</span> from ${money(firstP)} on ${fmtDayY(hist[0].t)}${hist[0].o ? " (archive.org)" : ""}</dd>
+        <dt>Status</dt><dd>${L.on[i] ? `online, seen ${today - L.t1[i] <= 1 ? "today" : fmtDayY(L.t1[i])}` : `last seen ${fmtDayY(L.t1[i])}`}</dd>
+      </dl>
+      ${url ? `<p><a href="${esc(url)}" target="_blank" rel="noopener">Open the ad</a></p>` : ""}
+    </div><div class="chart"><canvas id="c-check"></canvas></div></div>`;
+  const pts = [...hist, { t: Math.max(L.t1[i], hist[hist.length - 1].t), v: last[i], o: hist[hist.length - 1].o }];
+  mk("c-check", {
+    type: "line",
+    data: { labels: pts.map(p => fmtDayY(p.t)), datasets: [{ label: "Asking price", data: pts.map(p => p.v), stepped: true, borderColor: cssv("--accent"), backgroundColor: cssv("--accent"),
+      pointRadius: pts.map((p, k) => k === pts.length - 1 ? 0 : 4), pointStyle: pts.map(p => p.o ? "rectRot" : "circle") }] },
+    options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => `${money(c.parsed.y)}${pts[c.dataIndex].o ? " (archive.org copy)" : ""}` } } },
+      scales: { y: { ticks: { callback: v => money(v), maxTicksLimit: 5 } }, x: { ticks: { maxTicksLimit: 6, maxRotation: 0 } } } }
+  });
+}
+
+// ---------- controls & URL ----------
+function syncControls() {
+  document.querySelectorAll(".seg").forEach(g => {
+    const k = g.dataset.key, v = state[k];
+    g.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(
+      g.hasAttribute("data-multi") ? (b.dataset.v === "all" ? !v.length : v.includes(b.dataset.v)) : b.dataset.v === v)));
+  });
+  for (const k of ["pmin", "pmax", "amin", "amax"]) {
+    const el = document.getElementById(k);
+    if (document.activeElement !== el) el.value = state[k] ?? "";
+  }
+  document.getElementById("price-label").textContent = state.deal === "rent" ? "Rent per month, ₼" : "Price, ₼";
+  const ds = state.districts;
+  document.getElementById("dd-district-label").textContent = !ds.length ? "All districts" : ds.length <= 2 ? ds.join(", ") : `${ds.length} districts`;
+  document.querySelectorAll("#dd-district-menu input").forEach(c => c.checked = ds.includes(c.value));
+  const extra = ["districts", "pmin", "pmax", "amin", "amax"].filter(k => Array.isArray(state[k]) ? state[k].length : state[k] != null).length + (state.source !== "all");
+  document.getElementById("more").innerHTML = `More filters${extra ? `<span class="count">${extra}</span>` : ""}`;
+}
+
+function buildDistrictMenu() {
+  const { L } = X, counts = new Map();
+  for (let i = 0; i < X.n; i++) if (L.on[i] && L.di[i] >= 0) counts.set(L.di[i], (counts.get(L.di[i]) || 0) + 1);
+  document.getElementById("dd-district-menu").innerHTML = DATA.dict.district
+    .map((d, k) => `<label><input type="checkbox" value="${esc(d)}">${esc(d)}<span>${nf0.format(counts.get(k) || 0)}</span></label>`).join("")
+    + `<label><button class="linkbtn" type="button" id="dd-clear">Clear</button></label>`;
+}
+
+function toggleDistrict(name) {
+  state.districts = state.districts.includes(name) ? state.districts.filter(x => x !== name) : [...state.districts, name];
+  render();
+}
+
+function writeHash() {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(state)) {
+    const d = DEFAULT[k];
+    if (Array.isArray(v) ? v.length : v != null && v !== d) p.set(k, Array.isArray(v) ? v.join(",") : v);
+  }
+  const h = p.toString();
+  history.replaceState(null, "", h ? "#" + h : location.pathname + location.search);
+}
+
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const s = { ...DEFAULT, rooms: [], districts: [] };
+  for (const [k, v] of p) {
+    if (!(k in DEFAULT)) continue;
+    if (Array.isArray(DEFAULT[k])) s[k] = v.split(",").filter(Boolean);
+    else if (["pmin", "pmax", "amin", "amax"].includes(k)) s[k] = Number(v) || null;
+    else s[k] = v;
+  }
+  if (!PERIODS[s.period]) s.period = DEFAULT.period;
+  return s;
+}
+
+function wire() {
+  document.querySelectorAll(".seg").forEach(g => g.addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const k = g.dataset.key, v = b.dataset.v;
+    if (g.hasAttribute("data-multi")) state[k] = v === "all" ? [] : state[k].includes(v) ? state[k].filter(x => x !== v) : [...state[k], v].sort();
+    else {
+      if (k === "deal" && v !== state.deal) { state.pmin = state.pmax = null; }
+      state[k] = v;
+    }
+    render();
+  }));
+  const more = document.getElementById("more");
+  more.addEventListener("click", () => { const open = more.getAttribute("aria-expanded") !== "true"; more.setAttribute("aria-expanded", String(open)); document.getElementById("extra").hidden = !open; });
+  let t = null;
+  for (const k of ["pmin", "pmax", "amin", "amax"]) document.getElementById(k).addEventListener("input", e => {
+    clearTimeout(t);
+    t = setTimeout(() => { const v = e.target.value.trim(); state[k] = v === "" ? null : Math.max(0, Number(v)); render(); }, 350);
+  });
+  document.getElementById("dd-district-menu").addEventListener("change", e => {
+    if (e.target.type !== "checkbox") return;
+    state.districts = [...document.querySelectorAll("#dd-district-menu input:checked")].map(c => c.value);
+    render();
+  });
+  document.getElementById("dd-district-menu").addEventListener("click", e => { if (e.target.id === "dd-clear") { state.districts = []; render(); } });
+  document.addEventListener("click", e => {
+    const dd = document.getElementById("dd-district");
+    if (dd.open && !dd.contains(e.target)) dd.open = false;
+    const b = e.target.closest("[data-district]");
+    if (b && !e.target.closest("#dd-district")) { state.districts = [b.dataset.district]; render(); document.getElementById("controls").scrollIntoView({ behavior: "smooth" }); }
+    const mv = e.target.closest(".movers li[data-lat]");
+    if (mv && map) map.setView([+mv.dataset.lat, +mv.dataset.lng], 13);
+  });
+  document.getElementById("reset").addEventListener("click", () => { state = { ...DEFAULT, rooms: [], districts: [], metric: state.metric }; render(); });
+  document.getElementById("share").addEventListener("click", async e => {
+    try { await navigator.clipboard.writeText(location.href); e.target.textContent = "Link copied"; }
+    catch { e.target.textContent = "Copy the address bar"; }
+    setTimeout(() => e.target.textContent = "Copy link to this view", 2000);
+  });
+  document.getElementById("map-metric").addEventListener("change", e => { state.metric = e.target.value; renderMap(); writeHash(); });
+  document.getElementById("csv").addEventListener("click", downloadCsv);
+  document.getElementById("check-form").addEventListener("submit", e => { e.preventDefault(); checkListing(document.getElementById("check-url").value); });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+  window.addEventListener("hashchange", () => { state = readHash(); render(); });
+  const ctl = document.getElementById("controls");
+  new IntersectionObserver(([en]) => ctl.classList.toggle("stuck", en.intersectionRatio < 1), { threshold: [1], rootMargin: "-1px 0px 0px 0px" }).observe(ctl);
+}
+
+// ---------- loading ----------
+async function fetchData() {
+  try {
+    const r = await fetch("/api/data", { cache: "no-cache" });
+    if (r.ok) return { data: await r.json(), id: r.headers.get("X-Export-Id"), live: true };
+  } catch (e) { /* no API when served as plain files */ }
+  const r = await fetch("data.json", { cache: "no-store" });
+  if (!r.ok) throw new Error(r.status);
+  return { data: await r.json(), id: null, live: false };
+}
+
+function adopt(d) {
+  DATA = d;
+  if (!DATA.L) { X = null; return; }
+  X = decode(DATA);
+  buildDistrictMenu();
+}
+
+async function poll() {
+  if (!live || document.hidden) return;
+  try {
+    const r = await fetch("/api/status", { cache: "no-cache" });
+    if (!r.ok) return;
+    const s = await r.json();
+    if (s.export_id != null && String(s.export_id) !== exportId) {
+      const next = await fetchData();
+      if (next.live) { adopt(next.data); exportId = next.id; render(); }
+    } else renderMeta();
+  } catch (e) { /* next tick */ }
+}
+
+async function load() {
+  try {
+    const got = await fetchData();
+    adopt(got.data); exportId = got.id; live = got.live;
+  } catch (e) {
+    document.getElementById("updated").textContent = "";
+    showNotice("No data yet. Run python -m analytics.export, then serve this folder with python -m http.server -d dashboard.");
+    document.getElementById("content").hidden = true;
+    return;
+  }
+  if (!X) {
+    renderMeta();
+    document.getElementById("content").hidden = true;
+    if (!DATA.meta?.empty) showNotice("This data file is from an older version of the tracker. It will be replaced after the next scrape.");
+    return;
+  }
+  state = readHash();
+  wire();
+  // a shared link with district, price, area or source filters opens the panel that shows them
+  if (state.districts.length || state.source !== "all" || ["pmin", "pmax", "amin", "amax"].some(k => state[k] != null)) document.getElementById("more").click();
+  render();
+  setInterval(poll, POLL_MS);
+  document.addEventListener("visibilitychange", poll);
 }
 
 load();

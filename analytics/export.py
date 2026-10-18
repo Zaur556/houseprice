@@ -3,50 +3,33 @@
     python -m analytics.export               # write dashboard/data.json and publish to the DB
     python -m analytics.export --no-file     # publish only (what CI does)
 
-All aggregation happens here. The payload is stored in the dashboard_exports
-table, which the Vercel function api/data.js serves to the dashboard, so the
-browser never queries listings directly.
+The payload is a compact, column-oriented copy of the cleaned listings and their price
+histories (no titles, descriptions, phone numbers or exact coordinates). The dashboard
+computes every statistic from it in the browser, so any combination of filters works
+instantly. It is stored in dashboard_exports and served by api/data.js.
+
+Cleaning done here, once:
+- areas outside 15–600 m² and prices per m² outside PPM2_RANGE are dropped;
+- the same flat posted on both sites is kept once (cross_source_duplicates);
+- districts missing from an ad are inferred from its metro station or settlement;
+- each listing is pinned to a map place: its metro station, else its settlement, else its district.
 """
 import argparse
 import json
-import math
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
 
 from scraper import db
-from scraper.config import DASHBOARD_DATA
+from scraper.config import DASHBOARD_DATA, ROOT
+from scraper.parse import METRO_DISTRICT, SETTLEMENT_DISTRICT, norm
 
-DEALS, BUILDINGS, ROOMS = ["sale", "rent"], ["all", "new", "old"], ["all", "1", "2", "3", "4"]
 PPM2_RANGE = {"sale": (250, 25000), "rent": (1.5, 150)}   # AZN per m² (rent: per month)
-WEEKS = 52
-MIN_N = 8          # minimum listings for a median to be shown
-
-
-def _clean(o):
-    if isinstance(o, dict):
-        return {k: _clean(v) for k, v in o.items()}
-    if isinstance(o, (list, tuple)):
-        return [_clean(v) for v in o]
-    if isinstance(o, (np.integer,)):
-        return int(o)
-    if isinstance(o, (float, np.floating)):
-        return None if math.isnan(o) or math.isinf(o) else round(float(o), 2)
-    if isinstance(o, pd.Timestamp):
-        return o.isoformat()
-    if o is pd.NaT:
-        return None
-    return o
-
-
-def _med(s, n=MIN_N):
-    s = s.dropna()
-    return float(s.median()) if len(s) >= n else None
-
-
-def _pct(a, b):
-    return (a / b - 1) * 100 if a is not None and b else None
+EPOCH = datetime(2024, 1, 1)                              # day numbers in the payload count from here
+PLACES = ROOT / "dashboard" / "geo" / "places.json"
+SOURCES = ["bina", "yeniemlak"]
+CURRENT_DAYS = 3        # a listing seen in the last 3 days counts as online now
 
 
 def load(engine):
@@ -56,15 +39,8 @@ def load(engine):
     for col in ("first_seen", "last_seen", "delisted_at"):
         L[col] = pd.to_datetime(L[col])
     S["observed_at"] = pd.to_datetime(S["observed_at"])
+    S["origin"] = S["origin"].fillna("live") if "origin" in S else "live"
     return L, S, R
-
-
-def prepare(L):
-    L = L[(L.area_m2 >= 15) & (L.area_m2 <= 600)].copy()
-    L["rooms_bucket"] = np.where(L.rooms >= 4, "4", L.rooms.astype("Int64").astype(str))
-    L.loc[L.rooms.isna(), "rooms_bucket"] = None
-    L["building"] = L["building"].where(L["building"].isin(["new", "old"]), None)
-    return L[~L.id.isin(cross_source_duplicates(L))]
 
 
 def cross_source_duplicates(L):
@@ -87,211 +63,123 @@ def cross_source_duplicates(L):
     return dup[dup.source != dup.key.map(keep)].id.tolist()
 
 
-def weekly_panel(L, S, now):
-    """One row per (week, listing seen that week) with the price valid at week end."""
-    weeks = pd.date_range(end=now.normalize(), periods=WEEKS, freq="7D")
-    parts = []
-    for w in weeks:
-        m = (L.first_seen <= w + timedelta(days=1)) & (L.last_seen >= w - timedelta(days=6))
-        if m.any():
-            parts.append(pd.DataFrame({"week": w + timedelta(days=1), "listing_id": L.id[m].values}))
-    if not parts:
-        return pd.DataFrame(columns=["week", "listing_id", "price_azn"]), weeks
-    P = pd.concat(parts).sort_values("week")
-    snap = S[["listing_id", "observed_at", "price_azn"]].sort_values("observed_at")
-    P = pd.merge_asof(P, snap, left_on="week", right_on="observed_at", by="listing_id", direction="backward")
-    P = P.dropna(subset=["price_azn"]).drop(columns="observed_at")
-    P["week"] = P["week"] - timedelta(days=1)
-    attrs = L[["id", "deal", "building", "rooms_bucket", "area_m2", "district"]].rename(columns={"id": "listing_id"})
-    P = P.merge(attrs, on="listing_id")
-    return add_ppm2(P), weeks
+def prepare(L, S):
+    L = L[(L.area_m2 >= 15) & (L.area_m2 <= 600) & L.deal.isin(PPM2_RANGE) & L.source.isin(SOURCES)].copy()
+    L["building"] = L["building"].where(L["building"].isin(["new", "old"]), None)
+    L = L[~L.id.isin(cross_source_duplicates(L))]
+
+    # Snapshots: drop impossible prices per m², keep the last one per listing per day.
+    S = S.merge(L[["id", "area_m2", "deal"]].rename(columns={"id": "listing_id"}), on="listing_id")
+    ppm2 = S.price_azn / S.area_m2
+    lo, hi = S.deal.map(lambda d: PPM2_RANGE[d][0]), S.deal.map(lambda d: PPM2_RANGE[d][1])
+    S = S[(ppm2 >= lo) & (ppm2 <= hi)].copy()
+    S["day"] = (S.observed_at - EPOCH).dt.days
+    S = S.sort_values(["listing_id", "observed_at"]).drop_duplicates(["listing_id", "day"], keep="last")
+    L = L[L.id.isin(S.listing_id)]
+
+    # Infer missing districts from metro station or settlement (marked as inferred).
+    need = L.district.isna()
+    guess = L.settlement.map(lambda s: SETTLEMENT_DISTRICT.get(norm(s)) if isinstance(s, str) else None)
+    guess = guess.fillna(L.metro.map(METRO_DISTRICT))
+    L.loc[need & guess.notna(), "district_inferred"] = True
+    L.loc[need, "district"] = guess[need]
+    return L, S
 
 
-def add_ppm2(df):
-    df = df.copy()
-    df["ppm2"] = df.price_azn / df.area_m2
-    lo = df.deal.map(lambda d: PPM2_RANGE[d][0])
-    hi = df.deal.map(lambda d: PPM2_RANGE[d][1])
-    return df[(df.ppm2 >= lo) & (df.ppm2 <= hi)]
+def place_index(L, places):
+    """Pin each listing to a map place: metro station, else settlement, else district centre."""
+    by = {(p["kind"], p.get("key") or p["name"]): i for i, p in enumerate(places)}
+
+    def pick(row):
+        if isinstance(row.metro, str) and ("metro", row.metro) in by:
+            return by[("metro", row.metro)]
+        if isinstance(row.settlement, str) and ("settlement", norm(row.settlement)) in by:
+            return by[("settlement", norm(row.settlement))]
+        if isinstance(row.district, str) and ("district", row.district) in by:
+            return by[("district", row.district)]
+        return -1
+    return L.apply(pick, axis=1) if len(L) else pd.Series(dtype=int)
 
 
-def seg(df, deal, b, r):
-    m = df.deal == deal
-    if b != "all":
-        m &= df.building == b
-    if r != "all":
-        m &= df.rooms_bucket == r
-    return df[m]
+def _codes(values, vocab):
+    pos = {v: i for i, v in enumerate(vocab)}
+    return [pos.get(v, -1) if isinstance(v, str) else -1 for v in values]
 
 
-def price_changes(S, L):
-    S = S.sort_values(["listing_id", "observed_at"]).copy()
-    S["prev"] = S.groupby("listing_id").price_azn.shift()
-    C = S[S.prev.notna() & ((S.price_azn - S.prev).abs() > 0.5)].copy()
-    C["pct"] = (C.price_azn / C.prev - 1) * 100
-    cols = ["id", "deal", "building", "rooms_bucket", "rooms", "area_m2", "district", "metro", "url", "source"]
-    return C.merge(L[cols].rename(columns={"id": "listing_id"}), on="listing_id")
-
-
-def build_segment(cur, pan, weeks, chg, L, now, deal, b, r, rent_cur):
-    c, p = seg(cur, deal, b, r), seg(pan, deal, b, r)
-    by_week = p.groupby("week")
-    # Mix-adjusted series: district medians averaged with fixed weights, so a week
-    # with more ads in cheap districts does not read as a price fall.
-    dw = p.dropna(subset=["district"]).groupby("district").size()
-    dw = dw / dw.sum() if dw.sum() else dw
-    trend = []
-    for w in weeks:
-        g = by_week.get_group(w) if w in by_week.groups else p.iloc[0:0]
-        adj = None
-        if len(g):
-            dm = g.dropna(subset=["district"]).groupby("district").ppm2.agg(["median", "size"])
-            dm = dm[dm["size"] >= 5]
-            cover = dw.reindex(dm.index).fillna(0)
-            if cover.sum() >= 0.7:
-                adj = float((dm["median"] * cover).sum() / cover.sum())
-        row = {"week": w.date().isoformat(), "n": len(g), "median": _med(g.ppm2), "adjusted": adj,
-               "p25": float(g.ppm2.quantile(.25)) if len(g) >= MIN_N else None,
-               "p75": float(g.ppm2.quantile(.75)) if len(g) >= MIN_N else None}
-        if b == "all":
-            row["new"] = _med(g.ppm2[g.building == "new"])
-            row["old"] = _med(g.ppm2[g.building == "old"])
-        trend.append(row)
-
-    def change(back):
-        if len(trend) <= back:
-            return None
-        a, z = trend[-1], trend[-1 - back]
-        if a["adjusted"] and z["adjusted"]:
-            return _pct(a["adjusted"], z["adjusted"])
-        return _pct(a["median"], z["median"])
-
-    sc = seg(chg, deal, b, r)
-    recent_cuts = sc[(sc.observed_at >= now - timedelta(days=30)) & (sc.pct < 0) & sc.listing_id.isin(c.id)]
-    seg_all = seg(L, deal, b, r)
-    gone = seg_all[(~seg_all.is_active) & (seg_all.delisted_at >= now - timedelta(days=90))]
-    days_listed = (gone.last_seen - gone.first_seen).dt.days
-
-    # Price changes per week (same weeks as the trend: week w covers the 7 days ending on w).
-    sw = sc[sc.observed_at.dt.normalize() > weeks[0] - timedelta(days=7)]
-    wk = np.searchsorted(weeks.values, sw.observed_at.dt.normalize().values, side="left")
-    change_trend = []
-    for i, w in enumerate(weeks):
-        g = sw.pct[wk == i]
-        n_cut, n_rise = int((g < 0).sum()), int((g > 0).sum())
-        online = trend[i]["n"]
-        change_trend.append({"week": w.date().isoformat(), "cuts": n_cut, "rises": n_rise,
-                             "median_cut_pct": _med(g[g < 0], 3),
-                             "cut_rate": n_cut / online * 100 if online >= MIN_N else None})
-
-    med_now = _med(c.ppm2)
-    kpi = {
-        "active": len(c), "median_price": _med(c.price_azn), "median_ppm2": med_now,
-        "p25_ppm2": float(c.ppm2.quantile(.25)) if len(c) >= MIN_N else None,
-        "p75_ppm2": float(c.ppm2.quantile(.75)) if len(c) >= MIN_N else None,
-        "median_area": _med(c.area_m2),
-        "change_4w": change(4), "change_12w": change(12),
-        "new_7d": int((seg_all.first_seen >= now - timedelta(days=7)).sum()),
-        "cuts_30d": int(recent_cuts.listing_id.nunique()),
-        "cut_share_30d": recent_cuts.listing_id.nunique() / len(c) * 100 if len(c) else None,
-        "median_cut_pct": _med(recent_cuts.pct, 3),
-        "median_days_listed": _med(days_listed, 10),
-    }
-
-    # districts
-    last_w, prev_w = weeks[-1], weeks[-5] if len(weeks) >= 5 else weeks[0]
-    p_last = p[p.week == last_w].groupby("district").ppm2
-    p_prev = p[p.week == prev_w].groupby("district").ppm2
-    rent_by_d = seg(rent_cur, "rent", "all", r).groupby("district").ppm2 if deal == "sale" else None
-    districts = []
-    for d, g in c.dropna(subset=["district"]).groupby("district"):
-        if len(g) < 3:
-            continue
-        row = {"district": d, "n": len(g), "median_price": _med(g.price_azn, 3), "median_ppm2": _med(g.ppm2, 3),
-               "inferred_share": float(g.district_inferred.fillna(False).astype(bool).mean() * 100)}
-        a = _med(p_last.get_group(d), 5) if d in p_last.groups else None
-        z = _med(p_prev.get_group(d), 5) if d in p_prev.groups else None
-        row["change_4w"] = _pct(a, z)
-        dc = recent_cuts[recent_cuts.district == d]
-        row["cut_share_30d"] = dc.listing_id.nunique() / len(g) * 100
-        row["median_cut_pct"] = _med(dc.pct, 3)
-        if b == "all":
-            row["new_ppm2"] = _med(g.ppm2[g.building == "new"], 3)
-            row["old_ppm2"] = _med(g.ppm2[g.building == "old"], 3)
-        if rent_by_d is not None and d in rent_by_d.groups and row["median_ppm2"]:
-            rent = _med(rent_by_d.get_group(d), 3)
-            row["gross_yield"] = rent * 12 / row["median_ppm2"] * 100 if rent else None
-        districts.append(row)
-    districts.sort(key=lambda x: -(x["median_ppm2"] or 0))
-
-    top = [x["district"] for x in sorted(districts, key=lambda x: -x["n"])[:8]]
-    dtrend = {d: [_med(g.ppm2, 5) for w in weeks
-                  for g in [p[(p.week == w) & (p.district == d)]]] for d in top}
-
-    metro = [{"metro": m, "n": len(g), "median_ppm2": _med(g.ppm2, 3), "median_price": _med(g.price_azn, 3)}
-             for m, g in c.dropna(subset=["metro"]).groupby("metro") if len(g) >= 3]
-    metro = sorted(metro, key=lambda x: -x["n"])[:20]
-
-    rooms = []
-    if r == "all":
-        for rb, g in c.dropna(subset=["rooms_bucket"]).groupby("rooms_bucket"):
-            rooms.append({"rooms": rb, "n": len(g), "median_price": _med(g.price_azn, 3),
-                          "median_ppm2": _med(g.ppm2, 3), "median_area": _med(g.area_m2, 3)})
-        rooms.sort(key=lambda x: x["rooms"])
-
-    hist = None
-    if len(c) >= 20:
-        lo, hi = c.ppm2.quantile(.02), c.ppm2.quantile(.98)
-        counts, edges = np.histogram(c.ppm2, bins=20, range=(lo, hi))
-        hist = {"edges": edges.tolist(), "counts": counts.tolist()}
-
-    f = c.dropna(subset=["floor", "floors_total"])
-    f = f[f.floors_total > 1]
-    pos = np.select([f.floor <= 1, f.floor >= f.floors_total], ["first", "top"], "middle")
-    floors = [{"position": k, "n": int((pos == k).sum()), "median_ppm2": _med(f.ppm2[pos == k], 5)}
-              for k in ("first", "middle", "top")]
-
-    return {"kpi": kpi, "trend": trend, "change_trend": change_trend, "districts": districts, "district_trend": dtrend,
-            "metro": metro, "rooms": rooms, "hist": hist, "floors": floors}
+def _ints(s, missing=-1):
+    return [int(v) if pd.notna(v) else missing for v in s]
 
 
 def build(engine) -> dict:
     L, S, R = load(engine)
     demo = bool((R.source == "demo").any()) if len(R) else False
+    places = json.loads(PLACES.read_text(encoding="utf-8"))["places"] if PLACES.exists() else []
+    meta = {"generated_at": db.utcnow().isoformat(), "epoch": EPOCH.date().isoformat(), "demo": demo,
+            "ppm2_range": PPM2_RANGE, "current_days": CURRENT_DAYS}
     if L.empty:
-        return {"meta": {"generated_at": db.utcnow().isoformat(), "empty": True, "demo": demo}, "segments": {}}
-    L = prepare(L)
+        return {"meta": {**meta, "empty": True}, "sources": [], "places": places}
+
+    L, S = prepare(L, S)
     now = L.last_seen.max()
-    cur = add_ppm2(L[L.is_active & (L.last_seen >= now - timedelta(days=3))])
-    pan, weeks = weekly_panel(L, S, now)
-    chg = price_changes(S, L)
+    L = L.sort_values("id").reset_index(drop=True)
+    order = {lid: i for i, lid in enumerate(L.id)}
+    S = S.assign(li=S.listing_id.map(order)).sort_values(["li", "day"])
+    so = pd.Series(range(len(S)), index=S.li.values).groupby(level=0).min()
+    sn = S.groupby("li").size()
 
-    segments = {}
-    for deal in DEALS:
-        for b in BUILDINGS:
-            for r in ROOMS:
-                segments[f"{deal}|{b}|{r}"] = build_segment(cur, pan, weeks, chg, L, now, deal, b, r, cur)
+    districts = sorted(L.district.dropna().unique())
+    metros = sorted(L.metro.dropna().unique())
+    current = L.is_active & (L.last_seen >= now - timedelta(days=CURRENT_DAYS))
+    pl = place_index(L, places)
+    sid = L.source_id.astype(str)
+    multi = L.index.isin(sn[sn > 1].index)
+    urls = {int(i): u for i, u in zip(L.index[multi & (L.source != "bina")], L.url[multi & (L.source != "bina")])}
 
-    feed = chg.sort_values("observed_at", ascending=False).head(400)
-    changes = [{"date": row.observed_at.date().isoformat(), "deal": row.deal, "building": row.building,
-                "rooms_bucket": row.rooms_bucket, "rooms": row.rooms, "area": row.area_m2,
-                "district": row.district, "metro": row.metro, "old": row.prev, "new": row.price_azn,
-                "pct": row.pct, "url": row.url, "source": row.source} for row in feed.itertuples()]
-
+    live = S[S.origin == "live"]
+    meta.update({
+        "data_through": now.isoformat(), "today": int((now - EPOCH).days),
+        "listings_tracked": int(len(L)), "online_now": int(current.sum()),
+        "live_since": int(live.day.min()) if len(live) else None,
+        "archive_snapshots": int((S.origin == "archive").sum()),
+        "archive_listings": int(S[S.origin == "archive"].listing_id.nunique()),
+        "first_day": int(S.day.min()),
+    })
+    data = {
+        "meta": meta,
+        "dict": {"district": districts, "metro": metros, "source": SOURCES},
+        "places": places,
+        "L": {
+            "src": _codes(L.source, SOURCES),
+            "sid": [int(x) if x.isdigit() else -1 for x in sid],
+            "deal": [0 if d == "sale" else 1 for d in L.deal],
+            "b": [0 if b == "new" else 1 if b == "old" else -1 for b in L.building],
+            "r": _ints(L.rooms, 0),
+            "a": [round(float(a), 1) for a in L.area_m2],
+            "fl": _ints(L.floor, 0), "ft": _ints(L.floors_total, 0),
+            "di": _codes(L.district, districts),
+            "dx": [1 if x is True else 0 for x in L.district_inferred],
+            "mi": _codes(L.metro, metros),
+            "pl": [int(x) for x in pl],
+            "t0": [int(x) for x in (L.first_seen - EPOCH).dt.days],
+            "t1": [int(x) for x in (L.last_seen - EPOCH).dt.days],
+            "on": [1 if x else 0 for x in current],
+            "gone": [1 if (not a) and pd.notna(d) else 0 for a, d in zip(L.is_active, L.delisted_at)],
+            "so": [int(so.get(i, 0)) for i in L.index], "sn": [int(sn.get(i, 0)) for i in L.index],
+        },
+        "S": {"t": S.day.astype(int).tolist(), "v": [int(round(v)) for v in S.price_azn],
+              "o": [1 if o == "archive" else 0 for o in S.origin]},
+        "urls": urls,
+    }
     sources = []
     real = R[R.source != "demo"]
     for src, g in real.groupby("source"):
         ok = g[g.status == "ok"]
         last = g.sort_values("started_at").iloc[-1]
-        sources.append({"source": src, "last_ok": ok.finished_at.max() if len(ok) else None,
-                        "last_status": last.status, "last_error": last.error,
-                        "active": int(((L.source == src) & L.is_active).sum())})
-    return {
-        "meta": {"generated_at": db.utcnow().isoformat(), "data_through": now, "demo": demo,
-                 "weeks": [w.date().isoformat() for w in weeks], "listings_tracked": len(L),
-                 "price_changes_tracked": len(chg)},
-        "sources": sources, "segments": segments, "changes": changes,
-    }
+        sources.append({"source": src, "last_ok": ok.finished_at.max().isoformat() if len(ok) else None,
+                        "last_status": last.status, "last_error": last.error if isinstance(last.error, str) else None,
+                        "active": int(((L.source == src) & current).sum())})
+    data["sources"] = sources
+    return data
 
 
 def main(argv=None):
@@ -301,8 +189,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     engine = db.get_engine()
-    data = _clean(build(engine))
-    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    data = build(engine)
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str, allow_nan=False)
     if not args.no_file:
         DASHBOARD_DATA.parent.mkdir(parents=True, exist_ok=True)
         DASHBOARD_DATA.write_text(payload, encoding="utf-8")

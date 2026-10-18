@@ -23,7 +23,7 @@ for st, d in METRO_DISTRICT.items():
     STATIONS.setdefault(d, []).append(st)
 
 
-def main(days=200, n=9000):
+def main(days=730, n=7000):
     engine = db.get_engine()
     now = db.utcnow()
     start = now - timedelta(days=days)

@@ -1,0 +1,891 @@
+{
+"attribution": "Metro stations and settlements © OpenStreetMap contributors (ODbL); district centres from bina.az",
+"places": [
+{
+"kind": "metro",
+"name": "Şah İsmayıl Xətai",
+"lat": 40.38326,
+"lng": 49.87214
+},
+{
+"kind": "metro",
+"name": "Nizami",
+"lat": 40.37932,
+"lng": 49.83002
+},
+{
+"kind": "metro",
+"name": "Elmlər Akademiyası",
+"lat": 40.37515,
+"lng": 49.81548
+},
+{
+"kind": "metro",
+"name": "İnşaatçılar",
+"lat": 40.38909,
+"lng": 49.80236
+},
+{
+"kind": "metro",
+"name": "Nəsimi",
+"lat": 40.42465,
+"lng": 49.82628
+},
+{
+"kind": "metro",
+"name": "Bakmil",
+"lat": 40.41414,
+"lng": 49.8788
+},
+{
+"kind": "metro",
+"name": "Koroğlu",
+"lat": 40.42086,
+"lng": 49.91809
+},
+{
+"kind": "metro",
+"name": "Qara Qarayev",
+"lat": 40.41761,
+"lng": 49.93396
+},
+{
+"kind": "metro",
+"name": "Neftçilər",
+"lat": 40.41116,
+"lng": 49.94257
+},
+{
+"kind": "metro",
+"name": "Xalqlar Dostluğu",
+"lat": 40.39689,
+"lng": 49.95299
+},
+{
+"kind": "metro",
+"name": "Əhmədli",
+"lat": 40.38556,
+"lng": 49.95395
+},
+{
+"kind": "metro",
+"name": "Həzi Aslanov",
+"lat": 40.37304,
+"lng": 49.95357
+},
+{
+"kind": "metro",
+"name": "Azadlıq prospekti",
+"lat": 40.42596,
+"lng": 49.84293
+},
+{
+"kind": "metro",
+"name": "Dərnəgül",
+"lat": 40.4254,
+"lng": 49.86179
+},
+{
+"kind": "metro",
+"name": "20 Yanvar",
+"lat": 40.40414,
+"lng": 49.8077
+},
+{
+"kind": "metro",
+"name": "Cəfər Cabbarlı",
+"lat": 40.37965,
+"lng": 49.84895
+},
+{
+"kind": "metro",
+"name": "Ulduz",
+"lat": 40.41496,
+"lng": 49.89143
+},
+{
+"kind": "metro",
+"name": "Memar Əcəmi",
+"lat": 40.41068,
+"lng": 49.81394
+},
+{
+"kind": "metro",
+"name": "Avtovağzal",
+"lat": 40.42151,
+"lng": 49.79522
+},
+{
+"kind": "metro",
+"name": "28 May",
+"lat": 40.38279,
+"lng": 49.84674
+},
+{
+"kind": "metro",
+"name": "8 Noyabr",
+"lat": 40.40187,
+"lng": 49.82051
+},
+{
+"kind": "metro",
+"name": "Nəriman Nərimanov",
+"lat": 40.40282,
+"lng": 49.87064
+},
+{
+"kind": "metro",
+"name": "Gənclik",
+"lat": 40.39988,
+"lng": 49.85096
+},
+{
+"kind": "metro",
+"name": "Sahil",
+"lat": 40.37173,
+"lng": 49.84457
+},
+{
+"kind": "metro",
+"name": "İçərişəhər",
+"lat": 40.36596,
+"lng": 49.83165
+},
+{
+"kind": "metro",
+"name": "Xocəsən",
+"lat": 40.42119,
+"lng": 49.77897
+},
+{
+"kind": "settlement",
+"name": "Lökbatan",
+"key": "lokbatan",
+"lat": 40.32527,
+"lng": 49.73083
+},
+{
+"kind": "settlement",
+"name": "Qobu",
+"key": "qobu",
+"lat": 40.40132,
+"lng": 49.71439
+},
+{
+"kind": "settlement",
+"name": "Binəqədi",
+"key": "bineqedi",
+"lat": 40.46792,
+"lng": 49.82802
+},
+{
+"kind": "settlement",
+"name": "Badamdar",
+"key": "badamdar",
+"lat": 40.34119,
+"lng": 49.80766
+},
+{
+"kind": "settlement",
+"name": "Bayıl",
+"key": "bayil",
+"lat": 40.34478,
+"lng": 49.83706
+},
+{
+"kind": "settlement",
+"name": "Balaxanı",
+"key": "balaxani",
+"lat": 40.4616,
+"lng": 49.92142
+},
+{
+"kind": "settlement",
+"name": "Biləcəri",
+"key": "bileceri",
+"lat": 40.44148,
+"lng": 49.80955
+},
+{
+"kind": "settlement",
+"name": "Bilgəh",
+"key": "bilgeh",
+"lat": 40.57416,
+"lng": 50.04093
+},
+{
+"kind": "settlement",
+"name": "Mərdəkan",
+"key": "merdekan",
+"lat": 40.49359,
+"lng": 50.14955
+},
+{
+"kind": "settlement",
+"name": "Bakıxanov",
+"key": "bakixanov",
+"lat": 40.42285,
+"lng": 49.9616
+},
+{
+"kind": "settlement",
+"name": "Məhəmmədli",
+"key": "mehemmedli",
+"lat": 40.506,
+"lng": 49.90198
+},
+{
+"kind": "settlement",
+"name": "Qala",
+"key": "qala",
+"lat": 40.44413,
+"lng": 50.16317
+},
+{
+"kind": "settlement",
+"name": "Pirallahı",
+"key": "pirallahi",
+"lat": 40.45918,
+"lng": 50.33399
+},
+{
+"kind": "settlement",
+"name": "Atyalı",
+"key": "atyali",
+"lat": 40.44243,
+"lng": 49.68765
+},
+{
+"kind": "settlement",
+"name": "Güzdək",
+"key": "guzdek",
+"lat": 40.37203,
+"lng": 49.67985
+},
+{
+"kind": "settlement",
+"name": "Müşfiqabad",
+"key": "musfiqabad",
+"lat": 40.46875,
+"lng": 49.62179
+},
+{
+"kind": "settlement",
+"name": "Puta",
+"key": "puta",
+"lat": 40.29657,
+"lng": 49.66132
+},
+{
+"kind": "settlement",
+"name": "Sulutəpə",
+"key": "sulutepe",
+"lat": 40.42932,
+"lng": 49.76707
+},
+{
+"kind": "settlement",
+"name": "Şubanı",
+"key": "subani",
+"lat": 40.36324,
+"lng": 49.76372
+},
+{
+"kind": "settlement",
+"name": "Suraxanı",
+"key": "suraxani",
+"lat": 40.42003,
+"lng": 50.00189
+},
+{
+"kind": "settlement",
+"name": "Əmircan",
+"key": "emircan",
+"lat": 40.42198,
+"lng": 49.99007
+},
+{
+"kind": "settlement",
+"name": "4-cü Mikrorayon",
+"key": "4-cu mikrorayon",
+"lat": 40.41648,
+"lng": 49.81157
+},
+{
+"kind": "settlement",
+"name": "Fatmayı",
+"key": "fatmayi",
+"lat": 40.53017,
+"lng": 49.84573
+},
+{
+"kind": "settlement",
+"name": "Masazır",
+"key": "masazir",
+"lat": 40.47187,
+"lng": 49.75522
+},
+{
+"kind": "settlement",
+"name": "Yasamal",
+"key": "yasamal",
+"lat": 40.37944,
+"lng": 49.80192
+},
+{
+"kind": "settlement",
+"name": "Dərnəgül",
+"key": "dernegul",
+"lat": 40.41873,
+"lng": 49.84979
+},
+{
+"kind": "settlement",
+"name": "Corat",
+"key": "corat",
+"lat": 40.57301,
+"lng": 49.70934
+},
+{
+"kind": "settlement",
+"name": "Rəsulzadə",
+"key": "resulzade",
+"lat": 40.43108,
+"lng": 49.83625
+},
+{
+"kind": "settlement",
+"name": "Mehdiabad",
+"key": "mehdiabad",
+"lat": 40.49626,
+"lng": 49.84975
+},
+{
+"kind": "settlement",
+"name": "Ceyranbatan",
+"key": "ceyranbatan",
+"lat": 40.54223,
+"lng": 49.6603
+},
+{
+"kind": "settlement",
+"name": "Saray",
+"key": "saray",
+"lat": 40.53479,
+"lng": 49.71404
+},
+{
+"kind": "settlement",
+"name": "Buzovna",
+"key": "buzovna",
+"lat": 40.52224,
+"lng": 50.10291
+},
+{
+"kind": "settlement",
+"name": "Dübəndi",
+"key": "dubendi",
+"lat": 40.41563,
+"lng": 50.29966
+},
+{
+"kind": "settlement",
+"name": "Qoşaqışlaq Zirə",
+"key": "qosaqislaq zire",
+"lat": 40.42525,
+"lng": 50.2636
+},
+{
+"kind": "settlement",
+"name": "Şüvəlan",
+"key": "suvelan",
+"lat": 40.48674,
+"lng": 50.18397
+},
+{
+"kind": "settlement",
+"name": "Binə",
+"key": "bine",
+"lat": 40.44889,
+"lng": 50.08939
+},
+{
+"kind": "settlement",
+"name": "Zirə",
+"key": "zire",
+"lat": 40.36692,
+"lng": 50.29053
+},
+{
+"kind": "settlement",
+"name": "Türkan",
+"key": "turkan",
+"lat": 40.36628,
+"lng": 50.21312
+},
+{
+"kind": "settlement",
+"name": "Goradil",
+"key": "goradil",
+"lat": 40.54666,
+"lng": 49.82992
+},
+{
+"kind": "settlement",
+"name": "Yeni Suraxanı",
+"key": "yeni suraxani",
+"lat": 40.4303,
+"lng": 50.03742
+},
+{
+"kind": "settlement",
+"name": "Pirşağı",
+"key": "pirsagi",
+"lat": 40.55877,
+"lng": 49.88734
+},
+{
+"kind": "settlement",
+"name": "Maştağa",
+"key": "mastaga",
+"lat": 40.53156,
+"lng": 50.00095
+},
+{
+"kind": "settlement",
+"name": "Nardaran",
+"key": "nardaran",
+"lat": 40.55888,
+"lng": 50.00653
+},
+{
+"kind": "settlement",
+"name": "Zabrat",
+"key": "zabrat",
+"lat": 40.48122,
+"lng": 49.95258
+},
+{
+"kind": "settlement",
+"name": "Sabunçu",
+"key": "sabuncu",
+"lat": 40.44814,
+"lng": 49.93389
+},
+{
+"kind": "settlement",
+"name": "Kürdəxanı",
+"key": "kurdexani",
+"lat": 40.5508,
+"lng": 49.91722
+},
+{
+"kind": "settlement",
+"name": "Aşağı Güzdək",
+"key": "asagi guzdek",
+"lat": 40.481,
+"lng": 49.6662
+},
+{
+"kind": "settlement",
+"name": "28 May Qəsəbəsi",
+"key": "28 may",
+"lat": 40.46154,
+"lng": 49.63905
+},
+{
+"kind": "settlement",
+"name": "Korgöz",
+"key": "korgoz",
+"lat": 40.30497,
+"lng": 49.62815
+},
+{
+"kind": "settlement",
+"name": "Şonqar",
+"key": "sonqar",
+"lat": 40.32183,
+"lng": 49.60006
+},
+{
+"kind": "settlement",
+"name": "Savalan qəsəbəsi",
+"key": "savalan",
+"lat": 40.51754,
+"lng": 49.96572
+},
+{
+"kind": "settlement",
+"name": "Albalılıq",
+"key": "albaliliq",
+"lat": 40.52577,
+"lng": 50.06388
+},
+{
+"kind": "settlement",
+"name": "Ləhiş bağları",
+"key": "lehis baglari",
+"lat": 40.56832,
+"lng": 49.95179
+},
+{
+"kind": "settlement",
+"name": "Şüvəlan Şimal Qres",
+"key": "suvelan simal qres",
+"lat": 40.49532,
+"lng": 50.19925
+},
+{
+"kind": "settlement",
+"name": "Şağan",
+"key": "sagan",
+"lat": 40.4933,
+"lng": 50.12795
+},
+{
+"kind": "settlement",
+"name": "Binə Sovxoz",
+"key": "bine sovxoz",
+"lat": 40.41922,
+"lng": 50.10878
+},
+{
+"kind": "settlement",
+"name": "Zirə Südçülük",
+"key": "zire sudculuk",
+"lat": 40.42145,
+"lng": 50.2363
+},
+{
+"kind": "settlement",
+"name": "Qala 2",
+"key": "qala 2",
+"lat": 40.4692,
+"lng": 50.12618
+},
+{
+"kind": "settlement",
+"name": "Stansiya Sumqayıt",
+"key": "stansiya sumqayit",
+"lat": 40.55414,
+"lng": 49.61042
+},
+{
+"kind": "settlement",
+"name": "Bibiheybət",
+"key": "bibiheybet",
+"lat": 40.30627,
+"lng": 49.82236
+},
+{
+"kind": "settlement",
+"name": "Zəfəran Qəsəbəsi",
+"key": "zeferan",
+"lat": 40.54272,
+"lng": 50.05957
+},
+{
+"kind": "settlement",
+"name": "Dədə Qorqud",
+"key": "dede qorqud",
+"lat": 40.38682,
+"lng": 50.0243
+},
+{
+"kind": "settlement",
+"name": "Bahar Qəsəbəsi",
+"key": "bahar",
+"lat": 40.36786,
+"lng": 50.02964
+},
+{
+"kind": "settlement",
+"name": "Çiçək qəsəbəsi",
+"key": "cicek",
+"lat": 40.43888,
+"lng": 49.74993
+},
+{
+"kind": "settlement",
+"name": "Hökməli",
+"key": "hokmeli",
+"lat": 40.43088,
+"lng": 49.7373
+},
+{
+"kind": "settlement",
+"name": "Novxanı",
+"key": "novxani",
+"lat": 40.53269,
+"lng": 49.78235
+},
+{
+"kind": "settlement",
+"name": "Yeni Kürdəxanı",
+"key": "yeni kurdexani",
+"lat": 40.51087,
+"lng": 49.94004
+},
+{
+"kind": "settlement",
+"name": "Bülbülə",
+"key": "bulbule",
+"lat": 40.43254,
+"lng": 49.97815
+},
+{
+"kind": "settlement",
+"name": "Gülçülük Şüvəlan",
+"key": "gulculuk suvelan",
+"lat": 40.47476,
+"lng": 50.19535
+},
+{
+"kind": "settlement",
+"name": "Nübar",
+"key": "nubar",
+"lat": 40.44216,
+"lng": 49.70685
+},
+{
+"kind": "settlement",
+"name": "Yeni Türkan",
+"key": "yeni turkan",
+"lat": 40.37509,
+"lng": 50.1767
+},
+{
+"kind": "settlement",
+"name": "Digah qəsəbəsi",
+"key": "digah",
+"lat": 40.49212,
+"lng": 49.87326
+},
+{
+"kind": "settlement",
+"name": "Yeni Ramana Sabunçu",
+"key": "yeni ramana sabuncu",
+"lat": 40.44228,
+"lng": 49.97846
+},
+{
+"kind": "settlement",
+"name": "Qaraçuxur",
+"key": "qaracuxur",
+"lat": 40.39883,
+"lng": 49.9794
+},
+{
+"kind": "settlement",
+"name": "Zığ",
+"key": "zig",
+"lat": 40.34275,
+"lng": 49.98038
+},
+{
+"kind": "settlement",
+"name": "Xocəsən",
+"key": "xocesen",
+"lat": 40.41193,
+"lng": 49.7685
+},
+{
+"kind": "settlement",
+"name": "Yeni Sumqayıt qəsəbəsi",
+"key": "yeni sumqayit",
+"lat": 40.56003,
+"lng": 49.62717
+},
+{
+"kind": "settlement",
+"name": "Sevil Massivi",
+"key": "sevil massivi",
+"lat": 40.44855,
+"lng": 49.6492
+},
+{
+"kind": "settlement",
+"name": "Türkan Bağları",
+"key": "turkan baglari",
+"lat": 40.35417,
+"lng": 50.25845
+},
+{
+"kind": "settlement",
+"name": "Akademiya Bağları Türkan",
+"key": "akademiya baglari turkan",
+"lat": 40.3781,
+"lng": 50.16437
+},
+{
+"kind": "settlement",
+"name": "Üzümçülük Türkan",
+"key": "uzumculuk turkan",
+"lat": 40.37414,
+"lng": 50.14949
+},
+{
+"kind": "settlement",
+"name": "Qala Bağları",
+"key": "qala baglari",
+"lat": 40.44625,
+"lng": 50.18974
+},
+{
+"kind": "settlement",
+"name": "Binə Atçılıq",
+"key": "bine atciliq",
+"lat": 40.48639,
+"lng": 50.07094
+},
+{
+"kind": "settlement",
+"name": "Şuşa Qəsəbəsi",
+"key": "susa",
+"lat": 40.47585,
+"lng": 50.0133
+},
+{
+"kind": "settlement",
+"name": "Ramana Südçülük",
+"key": "ramana sudculuk",
+"lat": 40.48133,
+"lng": 49.98527
+},
+{
+"kind": "settlement",
+"name": "Subtropik Maştağa",
+"key": "subtropik mastaga",
+"lat": 40.50655,
+"lng": 49.99203
+},
+{
+"kind": "settlement",
+"name": "Yeni Balaxanı",
+"key": "yeni balaxani",
+"lat": 40.47496,
+"lng": 49.91567
+},
+{
+"kind": "settlement",
+"name": "Yaşıl Dərə",
+"key": "yasil dere",
+"lat": 40.56174,
+"lng": 49.67128
+},
+{
+"kind": "settlement",
+"name": "Sulutəpə Yeni Massiv",
+"key": "sulutepe yeni massiv",
+"lat": 40.43255,
+"lng": 49.7471
+},
+{
+"kind": "settlement",
+"name": "Motodrom YS",
+"key": "motodrom ys",
+"lat": 40.42142,
+"lng": 49.79257
+},
+{
+"kind": "settlement",
+"name": "Əhmədli",
+"key": "ehmedli",
+"lat": 40.38513,
+"lng": 49.94471
+},
+{
+"kind": "settlement",
+"name": "Gürgan",
+"key": "gurgan",
+"lat": 40.39689,
+"lng": 50.33447
+},
+{
+"kind": "settlement",
+"name": "Ramana",
+"key": "ramana",
+"lat": 40.45717,
+"lng": 49.98261
+},
+{
+"kind": "settlement",
+"name": "Hövsan",
+"key": "hovsan",
+"lat": 40.36687,
+"lng": 50.08086
+},
+{
+"kind": "district",
+"name": "Binəqədi",
+"lat": 40.47503,
+"lng": 49.82238
+},
+{
+"kind": "district",
+"name": "Qaradağ",
+"lat": 40.286,
+"lng": 49.708
+},
+{
+"kind": "district",
+"name": "Xətai",
+"lat": 40.37818,
+"lng": 49.93138
+},
+{
+"kind": "district",
+"name": "Xəzər",
+"lat": 40.47023,
+"lng": 50.10034
+},
+{
+"kind": "district",
+"name": "Nərimanov",
+"lat": 40.40892,
+"lng": 49.864
+},
+{
+"kind": "district",
+"name": "Nəsimi",
+"lat": 40.39233,
+"lng": 49.82881
+},
+{
+"kind": "district",
+"name": "Nizami",
+"lat": 40.40878,
+"lng": 49.92876
+},
+{
+"kind": "district",
+"name": "Pirallahı",
+"lat": 40.47497,
+"lng": 50.33114
+},
+{
+"kind": "district",
+"name": "Sabunçu",
+"lat": 40.451,
+"lng": 49.945
+},
+{
+"kind": "district",
+"name": "Səbail",
+"lat": 40.33587,
+"lng": 49.82232
+},
+{
+"kind": "district",
+"name": "Suraxanı",
+"lat": 40.374,
+"lng": 50.021
+},
+{
+"kind": "district",
+"name": "Yasamal",
+"lat": 40.37996,
+"lng": 49.809
+}
+]
+}

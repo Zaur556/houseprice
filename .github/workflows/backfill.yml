@@ -1,0 +1,42 @@
+name: Backfill history from archive.org
+
+# One-off (rerunnable) import of archived bina.az ads as price history.
+# Resumes where it stopped: pages already read are recorded in archive_fetches.
+
+on:
+  workflow_dispatch:
+    inputs:
+      months:
+        description: "How many months back"
+        default: "24"
+      limit:
+        description: "Max pages this run (0 = all)"
+        default: "0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PYTHONUNBUFFERED: "1"      # progress lines show up live in the log
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Import archived ads
+        run: python -m tools.backfill_archive --months "${{ inputs.months }}" --limit "${{ inputs.limit }}"
+        timeout-minutes: 320
+        continue-on-error: true      # publish what was imported even if the run hit the time limit
+      - name: Publish dashboard data
+        run: python -m analytics.export --no-file

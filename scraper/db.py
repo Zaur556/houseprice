@@ -1,8 +1,8 @@
 """Storage: listings (one row per ad), price_snapshots (one row per price change), scrape_runs."""
 from datetime import datetime, timezone
 
-from sqlalchemy import (Boolean, Column, DateTime, Float, Integer, MetaData, String, Table, Text,
-                        bindparam, create_engine, func, insert, select, update)
+from sqlalchemy import (Boolean, Column, DateTime, Float, Index, Integer, MetaData, String, Table, Text,
+                        bindparam, case, create_engine, func, insert, inspect, select, text, update)
 
 from .config import DATABASE_URL
 
@@ -31,6 +31,9 @@ listings = Table(
     Column("last_seen", DateTime, nullable=False),
     Column("is_active", Boolean, default=True, index=True),
     Column("delisted_at", DateTime),
+    Column("lat", Float),                                 # only when the ad page gives coordinates
+    Column("lng", Float),
+    Column("enriched_at", DateTime),                      # ad page read (district etc. from the source's own data)
 )
 
 snapshots = Table(
@@ -41,6 +44,16 @@ snapshots = Table(
     Column("price", Float),
     Column("currency", String(4)),
     Column("price_azn", Float),
+    Column("origin", String(8), default="live"),          # live (our scrape) | archive (archive.org copy)
+    Index("ix_snap_listing_time", "listing_id", "observed_at"),
+)
+
+# Archived pages already processed by tools.backfill_archive, so reruns resume.
+archive_fetches = Table(
+    "archive_fetches", metadata,
+    Column("key", String(120), primary_key=True),         # "<timestamp> <url>"
+    Column("status", String(12)),                         # ok | skipped | error
+    Column("fetched_at", DateTime),
 )
 
 runs = Table(
@@ -70,6 +83,7 @@ KEEP_EXPORTS = 28    # one week of 6-hourly exports
 
 ATTRS = ("source", "source_id", "section", "url", "deal", "building", "rooms", "area_m2", "floor",
          "floors_total", "district", "district_inferred", "metro", "settlement", "title")
+LOCATION = ("district", "metro", "settlement")
 
 
 def utcnow() -> datetime:
@@ -79,7 +93,22 @@ def utcnow() -> datetime:
 def get_engine(url: str = DATABASE_URL):
     engine = create_engine(url, pool_pre_ping=True)
     metadata.create_all(engine)
+    migrate(engine)
     return engine
+
+
+def migrate(engine):
+    """Add columns and indexes introduced after a table was first created (create_all skips those)."""
+    insp = inspect(engine)
+    with engine.begin() as c:
+        for table in (listings, snapshots):
+            have = {col["name"] for col in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in have:
+                    ddl = col.type.compile(engine.dialect)
+                    c.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl}'))
+        if "ix_snap_listing_time" not in {i["name"] for i in insp.get_indexes("price_snapshots")}:
+            c.execute(text("CREATE INDEX IF NOT EXISTS ix_snap_listing_time ON price_snapshots (listing_id, observed_at)"))
 
 
 def start_run(engine, source: str, section: str) -> int:
@@ -111,7 +140,7 @@ def save_listings(engine, records: list[dict], now: datetime | None = None) -> d
         new_rows, upd_rows, snaps = [], [], []
         for r in records:
             snap = {"listing_id": r["id"], "observed_at": now, "price": r["price"],
-                    "currency": r["currency"], "price_azn": r["price_azn"]}
+                    "currency": r["currency"], "price_azn": r["price_azn"], "origin": "live"}
             if r["id"] not in existing:
                 new_rows.append({**{k: r.get(k) for k in ATTRS}, "id": r["id"], "price_azn": r["price_azn"],
                                  "first_seen": now, "last_seen": now, "is_active": True})
@@ -127,15 +156,72 @@ def save_listings(engine, records: list[dict], now: datetime | None = None) -> d
         if new_rows:
             c.execute(insert(listings), new_rows)
         if upd_rows:
+            # Card text can be sparser than the ad page: never blank out a known value, and keep
+            # the location read from the ad page (enrich) over one guessed from the card.
+            values = {k: func.coalesce(bindparam(f"v_{k}"), listings.c[k]) for k in ATTRS}
+            for k in LOCATION:
+                values[k] = case((listings.c.enriched_at.is_not(None), listings.c[k]), else_=values[k])
+            values["district_inferred"] = case(
+                (listings.c.enriched_at.is_not(None), listings.c.district_inferred),
+                else_=bindparam("v_district_inferred"))
             stmt = update(listings).where(listings.c.id == bindparam("b_id")).values(
-                **{k: bindparam(f"v_{k}") for k in ATTRS},
-                price_azn=bindparam("v_price_azn"), last_seen=bindparam("v_last_seen"),
+                **values, price_azn=bindparam("v_price_azn"), last_seen=bindparam("v_last_seen"),
                 is_active=True, delisted_at=None)
             c.execute(stmt, upd_rows)
         if snaps:
             c.execute(insert(snapshots), snaps)
         stats["new"] = len(new_rows)
     return stats
+
+
+def apply_enrichment(engine, listing_id: str, item: dict | None, now: datetime | None = None):
+    """Store what an ad page says about location. item=None marks the page as tried (gone or unreadable)."""
+    vals = {"enriched_at": now or utcnow()}
+    if item:
+        for k in ("district", "metro", "settlement", "lat", "lng", "floor", "floors_total", "rooms"):
+            if item.get(k) is not None:
+                vals[k] = item[k]
+        if item.get("district"):
+            vals["district_inferred"] = False
+    with engine.begin() as c:
+        c.execute(update(listings).where(listings.c.id == listing_id).values(**vals))
+
+
+def save_archived(engine, source: str, p: dict, observed_at: datetime) -> str:
+    """Merge one archived copy of an ad: a snapshot dated when archive.org saw it, and the listing
+    row widened to cover that date. Returns "new", "merged" or "duplicate"."""
+    lid = f"{source}:{p['id']}"
+    with engine.begin() as c:
+        row = c.execute(select(listings.c.first_seen, listings.c.last_seen, listings.c.is_active)
+                        .where(listings.c.id == lid)).first()
+        dup = c.execute(select(func.count()).select_from(snapshots).where(
+            snapshots.c.listing_id == lid, snapshots.c.observed_at == observed_at)).scalar_one()
+        if dup:
+            return "duplicate"
+        if row is None:
+            c.execute(insert(listings).values(
+                id=lid, source=source, source_id=str(p["id"]),
+                section=f"{source}:{p['deal']}:archive", url=f"https://bina.az/items/{p['id']}",
+                deal=p["deal"], building=p.get("building"), rooms=p.get("rooms"), area_m2=p.get("area_m2"),
+                floor=p.get("floor"), floors_total=p.get("floors_total"), district=p.get("district"),
+                district_inferred=False, metro=p.get("metro"), settlement=p.get("settlement"),
+                lat=p.get("lat"), lng=p.get("lng"), price_azn=p["price_azn"],
+                first_seen=observed_at, last_seen=observed_at, is_active=False, delisted_at=None))
+            status = "new"
+        else:
+            vals = {"first_seen": min(row.first_seen, observed_at)}
+            if not row.is_active:
+                vals["last_seen"] = max(row.last_seen, observed_at)
+                if observed_at >= row.last_seen:
+                    vals["price_azn"] = p["price_azn"]
+            for k in ("lat", "lng"):
+                if p.get(k) is not None:
+                    vals[k] = p[k]
+            c.execute(update(listings).where(listings.c.id == lid).values(**vals))
+            status = "merged"
+        c.execute(insert(snapshots).values(listing_id=lid, observed_at=observed_at, price=p["price"],
+                                           currency=p["currency"], price_azn=p["price_azn"], origin="archive"))
+        return status
 
 
 def publish_export(engine, payload: str, now: datetime | None = None) -> int:

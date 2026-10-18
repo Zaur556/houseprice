@@ -41,6 +41,9 @@ jobs:
       - name: Scrape
         run: python -m scraper.run
         continue-on-error: true      # publish whatever was collected even if one site failed
+      - name: Fill in districts from ad pages
+        run: python -m scraper.enrich
+        continue-on-error: true
       - name: Publish dashboard data
         run: python -m analytics.export --no-file
       - name: Summary
