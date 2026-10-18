@@ -41,3 +41,20 @@ def test_snapshots_and_delisting(tmp_path):
         snaps = conn.execute(db.snapshots.select()).fetchall()
         gone = conn.execute(db.listings.select().where(db.listings.c.id == "bina:2")).one()
     assert len(snaps) == 4 and not gone.is_active
+
+
+def test_yeniemlak_price_tag_is_used():
+    html = """<html><body>
+<table class="list"><tr><td class="title"><tip>Satılır</tip> <price>170000</price> <titem>Elan: <b>219711</b></titem></td></tr>
+<tr><td><a href="/elan/satilir-4-otaqli-bina-evi-menzil-suraxani-rayonu-219711"><img></a></td>
+<td class="text"><div class="params"><b>4</b> otaq</div><div class="params"><b>110</b> m2</div>
+<div class="params"><b>9</b> / <b>7</b> Mərtəbə</div><div class="params"><b>Suraxanı rayonu</b></div></td></tr>
+<tr><td><a class="detail" href="/elan/satilir-4-otaqli-bina-evi-menzil-suraxani-rayonu-219711">Ətraflı</a></td></tr></table>
+<table class="list"><tr><td class="title"><price>90000</price></td></tr>
+<tr><td><a href="/elan/satilir-1-otaqli-bina-evi-menzil-xetai-rayonu-219712">x</a></td><td>30 m2</td></tr></table>
+</body></html>"""
+    cards = {c["id"]: c for c in _cards(html)}
+    r = build_record("yeniemlak", "219711", cards["219711"]["url"], cards["219711"]["text"], SEC)
+    assert r["price_azn"] == 170000 and r["rooms"] == 4 and (r["floor"], r["floors_total"]) == (7, 9)
+    assert r["district"] == "Suraxanı"
+    assert cards["219712"]["text"].startswith("90000 AZN")

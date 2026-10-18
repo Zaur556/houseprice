@@ -40,3 +40,29 @@ def test_build_record_drops_incomplete():
     assert build_record("bina", "1", "u", "no price here 50 m²", sec) is None
     r = build_record("bina", "1", "u", "100 000 AZN 50 m² Nəsimi r.", sec)
     assert r["id"] == "bina:1" and r["building"] == "new" and r["section"] == "bina:sale:new"
+
+
+# Card texts as the sources rendered them on 2026-10-18 (currency drawn as an icon,
+# so the scrapers prepend "<price> AZN").
+def test_bina_card_with_icon_currency():
+    t = "165 500 AZN\nAgentlik\n165 500\nNardaran q.\n1 otaqlı\n48 m²\n3/7 mərtəbə\nBakı, bugün 01:15"
+    r = build_record("bina", "9", "https://bina.az/items/9", t, {"deal": "sale", "building": "new"})
+    assert r["price_azn"] == 165500 and r["rooms"] == 1 and r["area_m2"] == 48
+    assert (r["floor"], r["floors_total"]) == (3, 7)
+
+
+def test_bina_daily_rent_is_dropped():
+    t = "50 AZN\n50\n/gün\n28 May m.\n2 otaqlı\n60 m²\n15/16 mərtəbə"
+    assert build_record("bina", "8", "https://bina.az/items/8", t, {"deal": "rent", "building": None}) is None
+    monthly = t.replace("/gün", "/ay").replace("50", "900")
+    assert build_record("bina", "8", "https://bina.az/items/8", monthly, {"deal": "rent", "building": None})["price_azn"] == 900
+
+
+def test_yeniemlak_card_height_first_floor():
+    url = "https://yeniemlak.az/elan/satilir-2-otaqli-bina-evi-menzil-nerimanov-rayonu-4sayli-dost-merkezin-yani-ziy-219335"
+    t = ("120000 AZN\nSatılır\n120000\nBaxış sayı:\n26\nBina evi menzil\n/ Köhnə tikili\n2\notaq\n40\nm2\n5\n/\n3\n"
+         "Mərtəbə\nÜnvan:\nBakı\nNərimanov rayonu\nmetro.\nNəriman Nərimanov")
+    r = build_record("yeniemlak", "219335", url, t, {"deal": "sale", "building": None})
+    assert r["price_azn"] == 120000 and r["rooms"] == 2 and r["area_m2"] == 40
+    assert (r["floor"], r["floors_total"]) == (3, 5)
+    assert r["building"] == "old" and r["district"] == "Nərimanov" and r["metro"] == "Nəriman Nərimanov"

@@ -24,7 +24,15 @@ EXTRACT_JS = r"""
         node = p;
       }
     }
-    const text = (node.innerText || '') + '\n' + (a.getAttribute('aria-label') || '');
+    // The currency is an SVG icon (₼), so innerText has a bare number. Spell it out.
+    let priceLine = '';
+    const pf = node.querySelector('[data-cy="item-card-price-full"]');
+    if (pf) {
+      const box = pf.closest('.price-container') || pf.parentElement;
+      const cur = /\$|usd/i.test(box.innerText || '') ? 'USD' : 'AZN';
+      priceLine = pf.innerText.trim() + ' ' + cur + '\n';
+    }
+    const text = priceLine + (node.innerText || '') + '\n' + (a.getAttribute('aria-label') || '');
     const url = new URL(a.getAttribute('href'), location.origin).href.split('?')[0];
     if (!out[id] || text.length > out[id].text.length) out[id] = { id, url, text };
   });

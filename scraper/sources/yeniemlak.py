@@ -29,6 +29,10 @@ def _cards(html: str, base: str = "https://yeniemlak.az"):
                 break
             node = parent
         text = node.get_text("\n", strip=True)
+        # Prices sit in <price>120000</price> with the currency drawn by CSS; prices are in manats.
+        price = node.find("price") or (node.find_parent("table") or node).find("price")
+        if price and price.get_text(strip=True):
+            text = f"{price.get_text(strip=True)} AZN\n{text}"
         url = href if href.startswith("http") else base + href
         if lid not in out or len(text) > len(out[lid]["text"]):
             out[lid] = {"id": lid, "url": url.split("?")[0], "text": text}
