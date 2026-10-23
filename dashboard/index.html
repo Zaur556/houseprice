@@ -273,6 +273,7 @@ footer p{margin:0 0 8px}
             <button data-v="change" aria-pressed="false">% change</button>
           </div>
           <div class="seg" role="group" aria-label="Chart steps" data-key="gran">
+            <button data-v="day" aria-pressed="false">Daily</button>
             <button data-v="week" aria-pressed="false">Weekly</button>
             <button data-v="month" aria-pressed="false">Monthly</button>
           </div>
@@ -487,12 +488,16 @@ function matcher({ deal = state.deal, ignorePrice = false, ignoreDistricts = fal
     && (ignorePrice || ((pmin == null || last[i] >= pmin) && (pmax == null || last[i] <= pmax)));
 }
 
-// chart steps: the Weekly/Monthly toggle, or automatic (weekly up to 6 months, monthly beyond)
-const granularity = () => state.gran === "week" || state.gran === "month" ? state.gran : PERIODS[state.period] <= 182 ? "week" : "month";
+// chart steps: the Daily/Weekly/Monthly toggle, or automatic (weekly up to 6 months, monthly beyond)
+const granularity = () => ["day", "week", "month"].includes(state.gran) ? state.gran : PERIODS[state.period] <= 182 ? "week" : "month";
+const DAILY_DAYS = 91;   // daily steps cover at most the last 3 months
+const STEP = { day: { adj: "Daily", one: "day", many: "days" }, week: { adj: "Weekly", one: "week", many: "weeks" }, month: { adj: "Monthly", one: "month", many: "months" } };
 
 function buckets(start, today, gran = granularity()) {
   const out = [];
-  if (gran === "week") {
+  if (gran === "day") {
+    for (let d = Math.max(start, today - DAILY_DAYS) + 1; d <= today; d++) out.push({ bs: d, be: d, label: fmtDay(d) });
+  } else if (gran === "week") {
     const fmt = today - start > 300 ? fmtDayShortY : fmtDay;   // add the year when weeks span more than ~10 months
     for (let be = today; be > start; be -= 7) out.unshift({ bs: be - 6, be, label: fmt(be) });
   } else {                                    // calendar months
@@ -557,7 +562,11 @@ function compute() {
   const ppm2 = i => last[i] / L.a[i];
   const P = PERIODS[state.period], start = today - P;
 
-  const rows = series(base, buckets(start, today));
+  let bks = buckets(start, today), rows = series(base, bks);
+  if (granularity() === "day") {            // daily: start where there is data, not 3 months of empty days
+    const k = rows.findIndex(r => r.median != null);
+    if (k > 0) { bks = bks.slice(k); rows = rows.slice(k); }
+  }
   const recent = series(base, buckets(today - 34, today, "week"), false);
   const cur = current.map(ppm2), cs = sorted(cur);
   const inCurrent = new Set(current);
@@ -613,7 +622,7 @@ function compute() {
   districts.sort((a, b) => b.median_ppm2 - a.median_ppm2);
 
   const top = [...districts].sort((a, b) => b.n - a.n).slice(0, 8);
-  const dtrend = top.map(d => ({ name: d.district, data: series(base.filter(i => L.di[i] === d.code), buckets(start, today), false).map(r => r.median) }));
+  const dtrend = top.map(d => ({ name: d.district, data: series(base.filter(i => L.di[i] === d.code), bks, false).map(r => r.median) }));
 
   // map places
   const nowP = group(current, i => L.pl[i], ppm2), thenP = group(then, o => L.pl[o.i], o => o.ppm2);
@@ -786,7 +795,7 @@ const barLabels = { id: "barLabels", afterDatasetsDraw(chart) {
 } };
 
 function renderTrendChange() {
-  const t = R.rows, weekly = granularity() === "week", step = weekly ? "week" : "month";
+  const t = R.rows, g = granularity(), step = STEP[g].one;
   // compare like with like: mix-adjusted when both steps have it, else the plain median
   const steps = t.map((r, k) => {
     const prev = t[k - 1];
@@ -826,7 +835,8 @@ function renderTrendChange() {
   document.getElementById("trend-sub").textContent = `How much the price per m² moved each ${step} (bars: rises up, falls down) and in total since the start of the period (line).`;
   document.getElementById("trend-note").textContent = [
     "Uses the mix-adjusted price where both steps have one, so a change in which districts are listed doesn’t show up as a price move.",
-    t.some(r => r.archive > .5) ? `Faded bars: ${step}s based on archived bina.az ads, a small sample, so expect more noise.` : "",
+    g === "day" && PERIODS[state.period] > DAILY_DAYS ? "Daily steps cover the last 3 months." : "",
+    t.some(r => r.archive > .5) ? `Faded bars: ${STEP[g].many} based on archived bina.az ads, a small sample, so expect more noise.` : "",
     big ? `Largest single move: ${pct(big.pct)}.` : "Not enough history yet to compare steps.",
   ].filter(Boolean).join(" ");
 }
@@ -858,12 +868,13 @@ function renderTrendPrice() {
       scales: { y: { ticks: { callback: v => perM2(v) } }, x: { ticks: { maxTicksLimit: narrow() ? 5 : 12, maxRotation: 0 } } }
     }
   });
-  const weekly = granularity() === "week";
+  const g = granularity();
   const arch = t.filter(r => r.archive > .5 && r.n);
   const gaps = t.filter(r => r.median == null).length;
-  document.getElementById("trend-sub").textContent = `${weekly ? "Weekly" : "Monthly"} median of listings online, the middle half of listings as a band, and a mix-adjusted line that holds the district mix fixed.`;
+  document.getElementById("trend-sub").textContent = `${STEP[g].adj} median of listings online, the middle half of listings as a band, and a mix-adjusted line that holds the district mix fixed.`;
   document.getElementById("trend-note").textContent = [
-    arch.length ? `Dashed: ${weekly ? "weeks" : "months"} based on archived bina.az ads (archive.org), about ${nf0.format(median(arch.map(r => r.n), 1))} ads each.` : "",
+    g === "day" && PERIODS[state.period] > DAILY_DAYS ? "Daily steps cover the last 3 months." : "",
+    arch.length ? `Dashed: ${STEP[g].many} based on archived bina.az ads (archive.org), about ${nf0.format(median(arch.map(r => r.n), 1))} ads each.` : "",
     gaps ? `Gaps: fewer than ${MIN_N} matching ads, so no median is shown.` : "",
   ].filter(Boolean).join(" ");
 }
@@ -1251,7 +1262,7 @@ function readHash() {
     else s[k] = v;
   }
   if (!PERIODS[s.period]) s.period = DEFAULT.period;
-  if (!["auto", "week", "month"].includes(s.gran)) s.gran = DEFAULT.gran;
+  if (!["auto", "day", "week", "month"].includes(s.gran)) s.gran = DEFAULT.gran;
   if (!["price", "change"].includes(s.tview)) s.tview = DEFAULT.tview;
   return s;
 }
