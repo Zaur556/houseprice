@@ -92,3 +92,23 @@ def test_backfill_queue_survives_index_outage(tmp_path, monkeypatch):
     monkeypatch.setattr(bf, "cdx_month", down)
     monkeypatch.setattr(bf.time, "sleep", lambda s: None)
     assert bf.candidates(None, 24, log=lambda *a: None) == []                  # gives up after 3 months
+
+
+def test_payload_split_into_gzip_parts(tmp_path, monkeypatch):
+    import base64
+    import gzip
+    engine = db.get_engine(f"sqlite:///{tmp_path / 'p.db'}")
+    payload = json.dumps({"x": ["Nəsimi şəhər ə" * 50 for _ in range(400)]}, ensure_ascii=False)
+    monkeypatch.setattr(db, "PART_CHARS", 10_000)
+    chunks = db.split_payload(payload, db.PART_CHARS)
+    assert len(chunks) > 5 and "".join(gzip.decompress(c).decode("utf-8") for c in chunks) == payload
+    for _ in range(db.KEEP_EXPORTS + 2):
+        export_id = db.publish_export(engine, payload)
+    assert db.latest_export(engine) == payload
+    with engine.connect() as c:
+        row = c.execute(db.exports.select().where(db.exports.c.id == export_id)).one()
+        stored = c.execute(db.parts.select().where(db.parts.c.export_id == export_id)).fetchall()
+        kept = {r.export_id for r in c.execute(db.parts.select())}
+    assert row.parts == len(stored) == len(chunks) and row.gz_bytes < row.raw_bytes / 3
+    assert gzip.decompress(base64.b64decode(stored[0].data)).decode("utf-8") == payload[:10_000]
+    assert len(kept) == db.KEEP_EXPORTS                    # old exports' parts are pruned too

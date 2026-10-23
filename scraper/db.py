@@ -1,4 +1,6 @@
 """Storage: listings (one row per ad), price_snapshots (one row per price change), scrape_runs."""
+import base64
+import gzip
 from datetime import datetime, timezone
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, Index, Integer, MetaData, String, Table, Text,
@@ -87,9 +89,22 @@ exports = Table(
     "dashboard_exports", metadata,
     Column("id", Integer, primary_key=True, autoincrement=True),
     Column("generated_at", DateTime, nullable=False, index=True),
-    Column("payload", Text, nullable=False),              # data.json as text, served verbatim
+    Column("payload", Text, nullable=False),              # legacy: whole data.json; now "" with parts set
+    Column("parts", Integer),                             # number of rows in dashboard_parts (NULL: legacy row)
+    Column("raw_bytes", Integer),
+    Column("gz_bytes", Integer),
 )
-KEEP_EXPORTS = 28    # one week of 6-hourly exports
+# The payload is gzipped and split so each piece stays far below Vercel's 4.5 MB
+# function response limit however large the data grows. api/data.js serves one
+# part per request with Content-Encoding: gzip; the browser unzips and joins them.
+parts = Table(
+    "dashboard_parts", metadata,
+    Column("export_id", Integer, primary_key=True),
+    Column("part", Integer, primary_key=True),
+    Column("data", Text, nullable=False),                 # base64 of a gzip member
+)
+KEEP_EXPORTS = 4     # the newest is served; a few older ones in case of a bad export
+PART_CHARS = 4_000_000   # JSON characters per part; gzips to roughly 0.5-0.8 MB
 
 ATTRS = ("source", "source_id", "section", "url", "deal", "building", "rooms", "area_m2", "floor",
          "floors_total", "district", "district_inferred", "metro", "settlement", "title", "renovated")
@@ -111,7 +126,7 @@ def migrate(engine):
     """Add columns and indexes introduced after a table was first created (create_all skips those)."""
     insp = inspect(engine)
     with engine.begin() as c:
-        for table in (listings, snapshots):
+        for table in (listings, snapshots, exports):
             have = {col["name"] for col in insp.get_columns(table.name)}
             for col in table.columns:
                 if col.name not in have:
@@ -234,19 +249,41 @@ def save_archived(engine, source: str, p: dict, observed_at: datetime) -> str:
         return status
 
 
+def split_payload(payload: str, size: int | None = None) -> list[bytes]:
+    """Cut the JSON text into slices (on character boundaries) and gzip each one separately,
+    so every part can be sent with Content-Encoding: gzip and joined after decoding."""
+    size = size or PART_CHARS
+    return [gzip.compress(payload[i:i + size].encode("utf-8"), compresslevel=9)
+            for i in range(0, len(payload), size)] or [gzip.compress(b"")]
+
+
 def publish_export(engine, payload: str, now: datetime | None = None) -> int:
-    """Store a dashboard payload and prune all but the newest KEEP_EXPORTS rows."""
+    """Store a dashboard payload as gzipped parts and prune all but the newest KEEP_EXPORTS."""
+    chunks = split_payload(payload)
     with engine.begin() as c:
-        res = c.execute(insert(exports).values(generated_at=now or utcnow(), payload=payload))
+        res = c.execute(insert(exports).values(
+            generated_at=now or utcnow(), payload="", parts=len(chunks),
+            raw_bytes=len(payload.encode("utf-8")), gz_bytes=sum(map(len, chunks))))
         new_id = res.inserted_primary_key[0]
+        c.execute(insert(parts), [{"export_id": new_id, "part": k, "data": base64.b64encode(b).decode("ascii")}
+                                  for k, b in enumerate(chunks)])
         keep = select(exports.c.id).order_by(exports.c.id.desc()).limit(KEEP_EXPORTS)
         c.execute(exports.delete().where(exports.c.id.not_in(keep)))
+        c.execute(parts.delete().where(parts.c.export_id.not_in(select(exports.c.id))))
         return new_id
 
 
 def latest_export(engine) -> str | None:
+    """The newest payload as JSON text (joins the parts; handles legacy single-row exports)."""
     with engine.connect() as c:
-        return c.execute(select(exports.c.payload).order_by(exports.c.id.desc()).limit(1)).scalar()
+        row = c.execute(select(exports.c.id, exports.c.payload, exports.c.parts)
+                        .order_by(exports.c.id.desc()).limit(1)).first()
+        if row is None:
+            return None
+        if row.parts is None:
+            return row.payload
+        data = c.execute(select(parts.c.data).where(parts.c.export_id == row.id).order_by(parts.c.part))
+        return "".join(gzip.decompress(base64.b64decode(d)).decode("utf-8") for (d,) in data)
 
 
 def mark_delisted(engine, section: str, run_started: datetime, found: int) -> int:

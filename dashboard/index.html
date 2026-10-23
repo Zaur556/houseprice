@@ -1411,7 +1411,16 @@ function wire() {
 async function fetchData() {
   try {
     const r = await fetch("/api/data", { cache: "no-cache" });
-    if (r.ok) return { data: await r.json(), id: r.headers.get("X-Export-Id"), live: true };
+    if (r.ok) {
+      const d = await r.json();
+      // a manifest: the data comes in gzipped parts, fetched in parallel and joined
+      if (d && !d.meta && d.parts && d.export_id != null) {
+        const texts = await Promise.all(Array.from({ length: d.parts }, (_, k) =>
+          fetch(`/api/data?id=${d.export_id}&part=${k}`).then(p => { if (!p.ok) throw new Error(`part ${k}: ${p.status}`); return p.text(); })));
+        return { data: JSON.parse(texts.join("")), id: String(d.export_id), live: true };
+      }
+      return { data: d, id: r.headers.get("X-Export-Id"), live: true };   // older single-piece export
+    }
   } catch (e) { /* no API when served as plain files */ }
   const r = await fetch("data.json", { cache: "no-store" });
   if (!r.ok) throw new Error(r.status);

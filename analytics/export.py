@@ -199,7 +199,9 @@ def main(argv=None):
         print(f"wrote {DASHBOARD_DATA} ({DASHBOARD_DATA.stat().st_size / 1024:.0f} KB)")
     if not args.no_publish:
         export_id = db.publish_export(engine, payload)
-        print(f"published export #{export_id} ({len(payload.encode()) / 1024:.0f} KB) for /api/data")
+        chunks = db.split_payload(payload)
+        print(f"published export #{export_id}: {len(payload.encode()) / 1024:.0f} KB of JSON, "
+              f"{sum(map(len, chunks)) / 1024:.0f} KB gzipped in {len(chunks)} part(s), for /api/data")
 
 
 if __name__ == "__main__":

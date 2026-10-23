@@ -16,7 +16,7 @@ GitHub Actions (manual, once)
 
 Vercel
   ├─ dashboard/index.html   static page, polls for new data every 5 minutes
-  ├─ api/data.js            newest export from Neon (edge-cached 5 min)
+  ├─ api/data.js            newest export from Neon, as gzipped parts (each far below Vercel's 4.5 MB limit)
   └─ api/status.js          newest export id + last scrape run per section
 ```
 
