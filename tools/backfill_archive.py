@@ -32,12 +32,12 @@ import requests
 from sqlalchemy import insert, select
 
 from scraper import db
-from scraper.config import USER_AGENT
 from scraper.sources.bina_item import parse_item, usable
 
 CDX = "https://web.archive.org/cdx/search/cdx"
 ID_RE = re.compile(r"bina\.az/items/(\d+)(?:\.html)?/?$")
-UA = {"User-Agent": USER_AGENT + " (price history backfill)"}
+# archive.org answers a browser-like user agent with an instant 429, so identify plainly as a bot.
+UA = {"User-Agent": "BakuPriceTracker/1.0 (+https://github.com/Zaur556/houseprice; price history backfill)"}
 
 
 class Pace:

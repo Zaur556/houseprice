@@ -1,9 +1,13 @@
 name: Backfill history from archive.org
 
-# One-off (rerunnable) import of archived bina.az ads as price history.
-# Resumes where it stopped: pages already read are recorded in archive_fetches.
+# Import of archived bina.az ads as price history. Each run works for up to ~5.5 hours
+# and resumes where the last one stopped (pages already read are in archive_fetches),
+# so the schedule below finishes the job unattended; once everything is read, a run
+# takes about a minute.
 
 on:
+  schedule:
+    - cron: "30 1,7,13,19 * * *"   # between the 6-hourly scrapes
   workflow_dispatch:
     inputs:
       months:
@@ -40,7 +44,9 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Import archived ads
-        run: python -m tools.backfill_archive --months "${{ inputs.months }}" --limit "${{ inputs.limit }}" --index "${{ inputs.index }}"
+        run: >-
+          python -m tools.backfill_archive --workers 2
+          --months "${{ inputs.months || '24' }}" --limit "${{ inputs.limit || '0' }}" --index "${{ inputs.index || 'skip' }}"
         timeout-minutes: 320
         continue-on-error: true      # publish what was imported even if the run hit the time limit
       - name: Publish dashboard data
