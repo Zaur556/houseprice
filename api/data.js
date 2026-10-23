@@ -20,11 +20,22 @@ export async function GET(request) {
   }
 }
 
+async function latest() {
+  try {
+    return await sql`
+      SELECT id, parts, raw_bytes, gz_bytes, to_char(generated_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS generated_at,
+             CASE WHEN parts IS NULL THEN payload END AS payload
+      FROM dashboard_exports ORDER BY id DESC LIMIT 1`;
+  } catch (e) {
+    // 42703: the parts columns don't exist yet (deployed before the export code migrated the
+    // table). Serve the old single-piece format rather than failing.
+    if (e && e.code === "42703") return await sql`SELECT id, NULL AS parts, payload FROM dashboard_exports ORDER BY id DESC LIMIT 1`;
+    throw e;
+  }
+}
+
 async function manifest(request) {
-  const [row] = await sql`
-    SELECT id, parts, raw_bytes, gz_bytes, to_char(generated_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS generated_at,
-           CASE WHEN parts IS NULL THEN payload END AS payload
-    FROM dashboard_exports ORDER BY id DESC LIMIT 1`;
+  const [row] = await latest();
   if (!row) return json({ error: "No export published yet. Run python -m analytics.export." }, 404);
   const etag = `"export-${row.id}"`;
   const headers = { "Cache-Control": CACHE, ETag: etag, "X-Export-Id": String(row.id) };
