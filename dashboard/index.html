@@ -113,6 +113,7 @@ h1{font-size:22px; font-weight:600; margin:0; letter-spacing:-.01em}
 .panel-head{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start}
 .chart{position:relative; height:260px}
 .chart.tall{height:340px}
+.chart.short{height:210px; margin-bottom:6px}
 .empty{color:var(--ink-2); font-size:14px; padding:24px 0}
 .legend-note{font-size:12px; color:var(--ink-2); margin:8px 0 0}
 
@@ -266,9 +267,15 @@ footer p{margin:0 0 8px}
           <h2>Price per m² over time</h2>
           <p class="sub" id="trend-sub">Median of listings online in each period, the middle half of listings as a band, and a mix-adjusted line that holds the district mix fixed.</p>
         </div>
-        <div class="seg" role="group" aria-label="Chart steps" data-key="gran">
-          <button data-v="week" aria-pressed="false">Weekly</button>
-          <button data-v="month" aria-pressed="false">Monthly</button>
+        <div class="row">
+          <div class="seg" role="group" aria-label="Chart view" data-key="tview">
+            <button data-v="price" aria-pressed="true">Price</button>
+            <button data-v="change" aria-pressed="false">% change</button>
+          </div>
+          <div class="seg" role="group" aria-label="Chart steps" data-key="gran">
+            <button data-v="week" aria-pressed="false">Weekly</button>
+            <button data-v="month" aria-pressed="false">Monthly</button>
+          </div>
         </div>
       </div>
       <div class="chart tall"><canvas id="c-trend"></canvas></div>
@@ -359,6 +366,8 @@ footer p{margin:0 0 8px}
       <section class="panel">
         <h2>Recent price changes</h2>
         <p class="tally" id="tally"></p>
+        <div class="chart short" id="c-feed-box"><canvas id="c-feed" aria-label="Each dot is one ad's price change"></canvas></div>
+        <p class="legend-note" id="feed-note"></p>
         <ul class="changes" id="changes"></ul>
       </section>
       <section class="panel">
@@ -391,7 +400,7 @@ footer p{margin:0 0 8px}
 "use strict";
 // ---------- state ----------
 const PERIODS = { "3m": 91, "6m": 182, "1y": 365, "2y": 730 };
-const DEFAULT = { deal: "sale", building: "all", rooms: [], period: "1y", gran: "auto", source: "all", districts: [], pmin: null, pmax: null, amin: null, amax: null, metric: "ppm2" };
+const DEFAULT = { deal: "sale", building: "all", rooms: [], period: "1y", gran: "auto", tview: "price", source: "all", districts: [], pmin: null, pmax: null, amin: null, amax: null, metric: "ppm2" };
 let state = { ...DEFAULT, rooms: [], districts: [] };
 let DATA = null, X = null;            // raw payload, decoded columns
 let exportId = null, live = false;
@@ -755,6 +764,74 @@ function renderHero() {
 }
 
 function renderTrend() {
+  if (state.tview === "change") renderTrendChange(); else renderTrendPrice();
+}
+
+// writes the % on each bar when there are few enough bars to read
+const barLabels = { id: "barLabels", afterDatasetsDraw(chart) {
+  const meta = chart.getDatasetMeta(0), data = chart.data.datasets[0].data;
+  if (meta.hidden || meta.data.length > (narrow() ? 14 : 30)) return;
+  const ctx = chart.ctx;
+  ctx.save();
+  ctx.font = `600 11px ${cssv("--font-ui")}`;
+  ctx.textAlign = "center";
+  meta.data.forEach((bar, k) => {
+    const v = data[k];
+    if (v == null) return;
+    ctx.fillStyle = v >= 0 ? cssv("--up") : cssv("--down");
+    ctx.textBaseline = v >= 0 ? "bottom" : "top";
+    ctx.fillText(pct(v), bar.x, v >= 0 ? bar.y - 3 : bar.y + 3);
+  });
+  ctx.restore();
+} };
+
+function renderTrendChange() {
+  const t = R.rows, weekly = granularity() === "week", step = weekly ? "week" : "month";
+  // compare like with like: mix-adjusted when both steps have it, else the plain median
+  const steps = t.map((r, k) => {
+    const prev = t[k - 1];
+    if (!prev) return null;
+    const adj = r.adjusted != null && prev.adjusted != null;
+    const a = adj ? prev.adjusted : prev.median, b = adj ? r.adjusted : r.median;
+    return a != null && b != null ? { from: a, to: b, pct: change(b, a), adj } : null;
+  });
+  const first = t.find(r => r.median != null);
+  const base = first && (first.adjusted ?? first.median);
+  const cum = t.map(r => base && r.median != null ? change(r.adjusted ?? r.median, base) : null);
+  const up = cssv("--up"), down = cssv("--down");
+  const colors = t.map((r, k) => { const s = steps[k]; const c = s && s.pct < 0 ? down : up; return r.archive > .5 ? c + "80" : c; });
+  mk("c-trend", {
+    data: { labels: t.map(x => x.label), datasets: [
+      { type: "bar", label: `Change from previous ${step}`, data: steps.map(s => s && s.pct), backgroundColor: colors, borderRadius: 2, barPercentage: .85, order: 2 },
+      { type: "line", label: "Change since start of period", data: cum, borderColor: cssv("--ink"), backgroundColor: cssv("--ink"), borderWidth: 1.8, pointRadius: 0, tension: .25, spanGaps: true, order: 1 },
+    ] },
+    plugins: [barLabels],
+    options: {
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: { callbacks: {
+          label: c => `${c.dataset.label}: ${pct(c.parsed.y)}`,
+          afterBody: items => {
+            const k = items[0].dataIndex, s = steps[k], r = t[k];
+            return [s ? `${perM2(s.from)} → ${perM2(s.to)} per m²${s.adj ? " (mix-adjusted)" : ""}` : "", `Listings: ${nf0.format(r.n)}${r.archive > .5 ? " (archived ads sample)" : ""}`].filter(Boolean);
+          } } }
+      },
+      scales: { y: { grace: "12%", ticks: { callback: v => pct(v), maxTicksLimit: 7 },
+                     grid: { color: c => c.tick.value === 0 ? cssv("--ink-2") : cssv("--line") } },
+                x: { grid: { display: false }, ticks: { maxTicksLimit: narrow() ? 5 : 12, maxRotation: 0 } } }
+    }
+  });
+  const big = steps.filter(Boolean).sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct))[0];
+  document.getElementById("trend-sub").textContent = `How much the price per m² moved each ${step} (bars: rises up, falls down) and in total since the start of the period (line).`;
+  document.getElementById("trend-note").textContent = [
+    "Uses the mix-adjusted price where both steps have one, so a change in which districts are listed doesn’t show up as a price move.",
+    t.some(r => r.archive > .5) ? `Faded bars: ${step}s based on archived bina.az ads, a small sample, so expect more noise.` : "",
+    big ? `Largest single move: ${pct(big.pct)}.` : "Not enough history yet to compare steps.",
+  ].filter(Boolean).join(" ");
+}
+
+function renderTrendPrice() {
   const t = R.rows;
   const accent = cssv("--accent");
   const dashed = ctx => { const a = t[ctx.p0DataIndex], b = t[ctx.p1DataIndex]; return (a && a.archive > .5) || (b && b.archive > .5) ? [5, 4] : undefined; };
@@ -1026,8 +1103,37 @@ function describe(i) {
   return [L.r[i] ? ROOMS[roomBucket(L.r[i])] : null, nf0.format(L.a[i]) + " m²", where].filter(Boolean).join(", ");
 }
 
+function renderFeedChart(list) {
+  const box = document.getElementById("c-feed-box");
+  const pts = list.filter(c => c.t >= R.start).slice(0, 3000);
+  box.hidden = !pts.length;
+  document.getElementById("feed-note").textContent = pts.length
+    ? `Each dot is one ad’s price change since ${fmtDayY(Math.max(R.start, DATA.meta.live_since ?? R.start))}: below the line a cut, above it a rise. Select a dot to open the ad.${pts.some(c => Math.abs(c.pct) > 30) ? " Changes beyond ±30% are drawn at the edge." : ""}`
+    : "";
+  if (!pts.length) return;
+  const clamp = v => Math.max(-30, Math.min(30, v));
+  const set = (label, arr, color) => ({ label, data: arr.map(c => ({ x: c.t, y: clamp(c.pct), c })), backgroundColor: color + "B3", borderColor: color, borderWidth: 1, pointRadius: 3.5, pointHoverRadius: 6 });
+  const today = X.today;
+  mk("c-feed", {
+    type: "scatter",
+    data: { datasets: [set("Cuts", pts.filter(c => c.pct < 0), cssv("--down")), set("Rises", pts.filter(c => c.pct > 0), cssv("--up"))] },
+    options: {
+      onClick: (e, els) => { if (!els.length) return; const c = els[0].element.$context.raw.c, url = adUrl(c.i); if (url) window.open(url, "_blank", "noopener"); },
+      onHover: (e, els) => { e.native.target.style.cursor = els.length ? "pointer" : "default"; },
+      plugins: { legend: { position: "bottom" }, tooltip: { callbacks: {
+        title: items => fmtDayY(items[0].raw.c.t),
+        label: c => { const x = c.raw.c; return [`${pct(x.pct)}: ${money(x.old)} to ${money(x.new)}`, describe(x.i)]; } } } },
+      scales: {
+        x: { type: "linear", min: Math.max(R.start, (DATA.meta.live_since ?? R.start) - 1), max: today + 1, ticks: { callback: v => fmtDay(v), maxTicksLimit: narrow() ? 4 : 6, maxRotation: 0 }, grid: { display: false } },
+        y: { min: -30, max: 30, ticks: { callback: v => pct(v), stepSize: 10 }, grid: { color: c => c.tick.value === 0 ? cssv("--ink-2") : cssv("--line") } },
+      }
+    }
+  });
+}
+
 function renderChanges() {
   const list = R.baseChanges;
+  renderFeedChart(list);
   const cuts = list.filter(c => c.pct < 0).length;
   document.getElementById("tally").textContent = list.length
     ? `${nf0.format(cuts)} cuts and ${nf0.format(list.length - cuts)} rises seen by the scraper for these filters.`
@@ -1146,6 +1252,7 @@ function readHash() {
   }
   if (!PERIODS[s.period]) s.period = DEFAULT.period;
   if (!["auto", "week", "month"].includes(s.gran)) s.gran = DEFAULT.gran;
+  if (!["price", "change"].includes(s.tview)) s.tview = DEFAULT.tview;
   return s;
 }
 
@@ -1182,7 +1289,7 @@ function wire() {
     const mv = e.target.closest(".movers li[data-lat]");
     if (mv && map) map.setView([+mv.dataset.lat, +mv.dataset.lng], 13);
   });
-  document.getElementById("reset").addEventListener("click", () => { state = { ...DEFAULT, rooms: [], districts: [], metric: state.metric, gran: state.gran }; render(); });
+  document.getElementById("reset").addEventListener("click", () => { state = { ...DEFAULT, rooms: [], districts: [], metric: state.metric, gran: state.gran, tview: state.tview }; render(); });
   document.getElementById("share").addEventListener("click", async e => {
     try { await navigator.clipboard.writeText(location.href); e.target.textContent = "Link copied"; }
     catch { e.target.textContent = "Copy the address bar"; }
