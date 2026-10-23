@@ -107,7 +107,7 @@ def fetch(s, pace: Pace, ts: str, url: str):
             time.sleep(5 * (attempt + 1))
             continue
         if r.status_code == 429 or r.status_code >= 500:
-            pace.slow_down(30 * (attempt + 1))
+            pace.slow_down(60 * (attempt + 1))
             continue
         return r.text if r.ok else None
     raise RuntimeError("archive.org kept refusing")
@@ -117,8 +117,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--months", type=int, default=24)
     ap.add_argument("--limit", type=int, default=0, help="stop after this many pages (0 = all)")
-    ap.add_argument("--workers", type=int, default=3)
-    ap.add_argument("--interval", type=float, default=0.7, help="seconds between requests, all workers")
+    # archive.org throttles at roughly 15 page requests a minute per address; going faster triggers
+    # long back-offs and ends up slower (3 workers at 0.7 s managed ~2 pages a minute).
+    ap.add_argument("--workers", type=int, default=1)
+    ap.add_argument("--interval", type=float, default=4.5, help="seconds between requests, all workers")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
 

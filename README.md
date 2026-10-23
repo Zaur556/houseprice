@@ -52,8 +52,9 @@ descriptions, phone numbers or exact coordinates). The browser computes all stat
 
 The scraper only knows prices from the day it starts. Earlier history comes from archive.org, which keeps
 copies of individual bina.az ads. Run it once after setup: GitHub → Actions → *Backfill history from
-archive.org* → *Run workflow*. It reads about 7,500 archived pages from the last 24 months (roughly 2–3
-hours, rate-limited), keeps the Baku apartments, and stores each as a snapshot dated when it was archived.
+archive.org* → *Run workflow*. It reads about 7,500 archived pages from the last 24 months. archive.org allows
+roughly 15 page requests a minute, so this takes about 9 hours: run the workflow twice (each run stops at
+5½ hours), keeps the Baku apartments, and stores each as a snapshot dated when it was archived.
 It can be stopped and rerun; finished pages are skipped. Locally: `python -m tools.backfill_archive --limit 50`.
 
 Archived ads are a sample of a few hundred ads a month, not a sweep, and archive.org saved almost nothing
@@ -121,7 +122,7 @@ The `data.json` shipped in this repo is that demo output. The live site shows it
 - **Price history.** A snapshot is stored when an ad first appears and whenever its price changes, so history costs almost no storage.
 - **Delisting.** When a run reaches the end of a section, ads not seen in it are marked delisted. A guard skips this if the run found under 60% of the active ads (a sign of blocking, not a market event). With the default `MAX_PAGES=40` the runs cover the newest ~1,000 ads per section; raise it to sweep whole sections.
 - **Duplicates.** The same flat on both sites (same deal, rooms, rounded area, floor, building height and district or metro) is counted once.
-- **Districts.** Taken from the ad. For bina.az ads whose card names only a metro station or settlement, `scraper.enrich` reads the ad page, where the site gives the district (up to `ENRICH_MAX`=600 pages per run). Anything still missing is inferred from a small map in `scraper/parse.py` and marked with * in the dashboard.
+- **Districts.** Taken from the ad. For bina.az ads whose card names only a metro station or settlement, `scraper.enrich` reads the ad page, where the site gives the district (up to `ENRICH_MAX`=1500 pages per run). Anything still missing is inferred from a small map in `scraper/parse.py` and marked with * in the dashboard.
 - **Price changes.** Cuts and rises in the feed and the 30-day statistics only count changes our own scraper saw within two weeks, so the date is known. Changes between an archived copy and today count towards long-run change only.
 - **Currency.** USD prices are converted at the 1.70 peg.
 

@@ -1,6 +1,6 @@
 """Fill in location for bina.az listings whose card named no district.
 
-    python -m scraper.enrich               # up to ENRICH_MAX ad pages, newest first
+    python -m scraper.enrich               # up to ENRICH_MAX (1500) ad pages, newest first
     python -m scraper.enrich --max 50
 
 bina.az cards often show only a metro station or settlement. The ad page has the
@@ -19,7 +19,7 @@ from . import db
 from .config import PROXY_URL, REQUEST_DELAY, USER_AGENT
 from .sources.bina_item import parse_item
 
-ENRICH_MAX = int(os.getenv("ENRICH_MAX", "600"))
+ENRICH_MAX = int(os.getenv("ENRICH_MAX", "1500"))   # ~1,400 new bina ads per run, about half without a district
 
 
 def pending(engine, limit: int) -> list[tuple[str, str]]:
@@ -44,7 +44,7 @@ def main(argv=None) -> int:
     todo = pending(engine, args.max)
     print(f"enrich: {len(todo)} bina listings without a district")
     done = fixed = errors = 0
-    delay = max(1.0, REQUEST_DELAY / 3)
+    delay = max(0.5, REQUEST_DELAY / 6)    # ad pages answer in ~0.3 s
     for lid, url in todo:
         try:
             r = s.get(url, timeout=30)
