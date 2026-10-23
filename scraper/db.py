@@ -33,7 +33,8 @@ listings = Table(
     Column("delisted_at", DateTime),
     Column("lat", Float),                                 # only when the ad page gives coordinates
     Column("lng", Float),
-    Column("enriched_at", DateTime),                      # ad page read (district etc. from the source's own data)
+    Column("enriched_at", DateTime),
+    Column("renovated", Boolean),                         # True renovated, False not, NULL unknown                      # ad page read (district etc. from the source's own data)
 )
 
 snapshots = Table(
@@ -91,7 +92,7 @@ exports = Table(
 KEEP_EXPORTS = 28    # one week of 6-hourly exports
 
 ATTRS = ("source", "source_id", "section", "url", "deal", "building", "rooms", "area_m2", "floor",
-         "floors_total", "district", "district_inferred", "metro", "settlement", "title")
+         "floors_total", "district", "district_inferred", "metro", "settlement", "title", "renovated")
 LOCATION = ("district", "metro", "settlement")
 
 
@@ -187,7 +188,7 @@ def apply_enrichment(engine, listing_id: str, item: dict | None, now: datetime |
     """Store what an ad page says about location. item=None marks the page as tried (gone or unreadable)."""
     vals = {"enriched_at": now or utcnow()}
     if item:
-        for k in ("district", "metro", "settlement", "lat", "lng", "floor", "floors_total", "rooms"):
+        for k in ("district", "metro", "settlement", "lat", "lng", "floor", "floors_total", "rooms", "renovated"):
             if item.get(k) is not None:
                 vals[k] = item[k]
         if item.get("district"):
@@ -214,7 +215,7 @@ def save_archived(engine, source: str, p: dict, observed_at: datetime) -> str:
                 deal=p["deal"], building=p.get("building"), rooms=p.get("rooms"), area_m2=p.get("area_m2"),
                 floor=p.get("floor"), floors_total=p.get("floors_total"), district=p.get("district"),
                 district_inferred=False, metro=p.get("metro"), settlement=p.get("settlement"),
-                lat=p.get("lat"), lng=p.get("lng"), price_azn=p["price_azn"],
+                lat=p.get("lat"), lng=p.get("lng"), renovated=p.get("renovated"), price_azn=p["price_azn"],
                 first_seen=observed_at, last_seen=observed_at, is_active=False, delisted_at=None))
             status = "new"
         else:

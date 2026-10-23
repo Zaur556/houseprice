@@ -75,6 +75,8 @@ _PRICE_PRE = re.compile(rf"(\$|usd)\s*({_NUM})")
 _AREA = re.compile(r"(\d+(?:[.,]\d+)?)\s*(?:m²|m2|kv\.?\s*m)")
 _ROOMS = re.compile(r"(\d+)\s*-?\s*otaq")      # "2 otaqlı" (bina), "2 otaq" (yeniemlak), "2-otaqli" (URLs)
 _FLOOR = re.compile(r"(\d+)\s*/\s*(\d+)\s*mertebe|mertebe\s*:?\s*(\d+)\s*/\s*(\d+)")
+_UNRENOVATED = re.compile(r"temirsiz|temir olunmamis|temire ehtiyac")
+_RENOVATED = re.compile(r"temirli|(?:avro|euro|evro|yeni|ela|dizayner) temir")
 _SETTLEMENT = re.compile(r"([\w\-]+(?: [\w\-]+){0,2}) q\.(?=\s|$|,)")
 
 
@@ -111,6 +113,12 @@ def parse_card(text: str, url: str = "") -> dict:
         a, b = (m.group(1), m.group(2)) if m.group(1) else (m.group(3), m.group(4))
         # bina writes floor/height ("3/7"), yeniemlak height/floor ("5 / 3"); the floor is never the larger.
         out["floor"], out["floors_total"] = sorted((int(a), int(b)))
+
+    # Renovation, from the ad's own words: "təmirsiz" (unrenovated) wins over "təmirli" (renovated).
+    if _UNRENOVATED.search(t):
+        out["renovated"] = False
+    elif _RENOVATED.search(t):
+        out["renovated"] = True
 
     if "yeni tikili" in t or "yeni-tikili" in u:
         out["building"] = "new"
@@ -163,6 +171,6 @@ def build_record(source: str, source_id: str, url: str, text: str, section: dict
         "district_inferred": p.get("district_inferred", False),
     }
     for k in ("rooms", "area_m2", "floor", "floors_total", "district", "metro",
-              "settlement", "price", "currency", "price_azn"):
+              "settlement", "price", "currency", "price_azn", "renovated"):
         rec[k] = p.get(k)
     return rec

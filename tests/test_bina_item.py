@@ -8,13 +8,13 @@ ARCHIVED = """<html><head><title>1 otaqlı yeni tikili — 43 m² — İnşaatç
 <h1>Satılır 1 otaqlı yeni tikili 43 m², İnşaatçılar m.</h1>
 <div>149 000</div><div>AZN</div><div>Baxışların sayı: 212</div><div>Müddəti başa çatıb: 01.11.2024, 15:33</div>
 <div>Kateqoriya</div><div>Yeni tikili</div><div>Mərtəbə</div><div>5 / 17</div><div>Sahə</div><div>43 m²</div>
-<div>Otaq sayı</div><div>1</div><p>Yasamalda təmirli mənzil.</p>
+<div>Otaq sayı</div><div>1</div><div>Təmir</div><div>var</div><p>Yasamalda təmirli mənzil.</p>
 <div class="map" data-lat="40.38015814813899" data-lng="49.80487512695312"></div>
 <a>İnşaatçılar m.</a><a>Yasamal r.</a><div>Elanın nömrəsi: 4663134</div>
 <footer><a>Xəzər r.</a></footer></body></html>"""
 
 ITEM = {"__typename": "Item", "id": "6554081", "isLeased": False, "isPaidDaily": None, "state": "PUBLISHED",
-        "rooms": 3, "floor": 8, "floors": 9, "area": {"units": "m²", "value": 80},
+        "rooms": 3, "floor": 8, "floors": 9, "hasRepair": False, "area": {"units": "m²", "value": 80},
         "price": {"currency": "AZN", "total": 225000},
         "category": {"slug": "menziller/kohne-tikili"}, "city": {"slug": "baki"},
         "location": {"fullName": "Xalqlar Dostluğu m."},
@@ -29,7 +29,7 @@ def test_archived_layout():
     assert (p["id"], p["deal"], p["building"], p["rooms"], p["area_m2"]) == ("4663134", "sale", "new", 1, 43)
     assert (p["floor"], p["floors_total"], p["price_azn"]) == (5, 17, 149000)
     assert p["district"] == "Yasamal" and p["metro"] == "İnşaatçılar" and "settlement" not in p
-    assert round(p["lat"], 3) == 40.380 and p["expired_at"].year == 2024
+    assert round(p["lat"], 3) == 40.380 and p["expired_at"].year == 2024 and p["renovated"] is True
 
 
 def test_live_layout():
@@ -37,6 +37,7 @@ def test_live_layout():
     assert usable(p)
     assert (p["district"], p["metro"], p["building"], p["deal"]) == ("Nizami", "Xalqlar Dostluğu", "old", "sale")
     assert (p["floor"], p["floors_total"], p["area_m2"], p["price_azn"]) == (8, 9, 80, 225000)
+    assert p["renovated"] is False
 
 
 def test_not_usable():

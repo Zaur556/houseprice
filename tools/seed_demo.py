@@ -57,6 +57,7 @@ def main(days=730, n=7000):
             "url": f"https://example.invalid/{lid}", "deal": deal, "building": building, "rooms": rooms,
             "area_m2": round(area, 1), "floor": floor, "floors_total": floors_total, "district": d,
             "district_inferred": False, "metro": metro, "settlement": None,
+            "renovated": None if random.random() < .3 else random.random() < (.75 if building == "new" else .45),
             "title": f"{rooms} otaqlı, {area:.0f} m², {d} r.", "price_azn": price,
             "first_seen": first, "last_seen": last, "is_active": active,
             "delisted_at": None if active else last})

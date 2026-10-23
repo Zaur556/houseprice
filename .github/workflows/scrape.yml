@@ -19,7 +19,7 @@ jobs:
   scrape:
     # Change to `self-hosted` if the sites block GitHub's cloud IPs (see README).
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       PROXY_URL: ${{ secrets.PROXY_URL }}

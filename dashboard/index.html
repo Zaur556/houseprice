@@ -89,6 +89,7 @@ h1{font-size:22px; font-weight:600; margin:0; letter-spacing:-.01em}
 .dd label{display:flex; gap:8px; align-items:center; padding:5px 6px; border-radius:6px; font-size:14px; color:var(--ink); cursor:pointer}
 .dd label:hover{background:var(--surface-2)}
 .dd label span{margin-left:auto; color:var(--ink-2); font-size:12px}
+.hint{font-size:12px; color:var(--ink-2)}
 .linkbtn{background:none; border:0; color:var(--accent); cursor:pointer; padding:6px 4px; font-size:14px}
 
 .hero{display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1.6fr); gap:28px; align-items:end; padding:8px 0 26px; border-bottom:1px solid var(--line); margin-bottom:24px}
@@ -134,6 +135,7 @@ h1{font-size:22px; font-weight:600; margin:0; letter-spacing:-.01em}
 .pop b{font-size:14px}
 .pop .k{color:var(--ink-2)}
 .leaflet-control-attribution{background:rgba(255,255,255,.75) !important}
+.heat-canvas{position:absolute; top:0; left:0; pointer-events:none}
 .dark-tiles .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.85) saturate(.6)}
 #map .leaflet-tile-pane{filter:saturate(.35) contrast(.95)}
 #map.dark-tiles .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.85) saturate(.35)}
@@ -235,6 +237,14 @@ footer p{margin:0 0 8px}
       <div class="field">Area, m²
         <div class="range"><input type="number" inputmode="numeric" min="0" placeholder="from" id="amin" aria-label="Minimum area"><span>–</span><input type="number" inputmode="numeric" min="0" placeholder="to" id="amax" aria-label="Maximum area"></div>
       </div>
+      <div class="field">Renovation
+        <div class="seg" role="group" aria-label="Renovation" data-key="renov">
+          <button data-v="all" aria-pressed="true">Any</button>
+          <button data-v="yes" aria-pressed="false">Renovated</button>
+          <button data-v="no" aria-pressed="false">Not renovated</button>
+        </div>
+        <span class="hint" id="renov-hint"></span>
+      </div>
       <div class="field">Source
         <div class="seg" role="group" aria-label="Source" data-key="source">
           <button data-v="all" aria-pressed="true">Both</button>
@@ -289,6 +299,11 @@ footer p{margin:0 0 8px}
           <h2>Price map</h2>
           <p class="sub" id="map-sub">Each bubble is a metro station, settlement or district. Size shows listings online now.</p>
         </div>
+        <div class="row">
+        <div class="seg" role="group" aria-label="Map style" data-key="mapstyle">
+          <button data-v="heat" aria-pressed="true">Heatmap</button>
+          <button data-v="bubbles" aria-pressed="false">Bubbles</button>
+        </div>
         <label class="field">Colour by
           <select class="metric" id="map-metric">
             <option value="ppm2">Median price per m² now</option>
@@ -298,6 +313,7 @@ footer p{margin:0 0 8px}
             <option value="n">Listings online</option>
           </select>
         </label>
+        </div>
       </div>
       <div class="map-layout">
         <div id="map" role="img" aria-label="Map of Baku with price bubbles"></div>
@@ -393,6 +409,7 @@ footer p{margin:0 0 8px}
     <p><b>What this is.</b> Asking prices from bina.az and yeniemlak.az, not sale prices. Dollar prices are converted at 1.70 ₼. A flat posted on both sites with the same rooms, area, floor and location is counted once.</p>
     <p><b>History.</b> From <span id="f-live">the first scrape</span> the newest ads in each section are read every 6 hours. Earlier months come from copies of bina.az ads saved by archive.org: a sample of a few hundred ads a month, not every listing, and none for some months. Those stretches are drawn dashed.</p>
     <p><b>Map.</b> An ad is placed at its metro station, else its settlement, else its district centre. Metro stations, settlements and base map © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.</p>
+    <p><b>Renovation.</b> bina.az ads state it in a field on the ad page, which the tracker reads after each scrape. yeniemlak.az has no such field, so it is read from the ad’s own words (“təmirli”, “təmirsiz”); ads that say neither count as unknown.</p>
     <p>“Days listed” runs from when the tracker first saw an ad until it disappeared. Districts marked * are partly inferred from the metro station or settlement in the ad.</p>
   </footer>
 </div>
@@ -401,7 +418,7 @@ footer p{margin:0 0 8px}
 "use strict";
 // ---------- state ----------
 const PERIODS = { "3m": 91, "6m": 182, "1y": 365, "2y": 730 };
-const DEFAULT = { deal: "sale", building: "all", rooms: [], period: "1y", gran: "auto", tview: "price", source: "all", districts: [], pmin: null, pmax: null, amin: null, amax: null, metric: "ppm2" };
+const DEFAULT = { deal: "sale", building: "all", rooms: [], period: "1y", gran: "auto", tview: "price", renov: "all", mapstyle: "heat", source: "all", districts: [], pmin: null, pmax: null, amin: null, amax: null, metric: "ppm2" };
 let state = { ...DEFAULT, rooms: [], districts: [] };
 let DATA = null, X = null;            // raw payload, decoded columns
 let exportId = null, live = false;
@@ -441,6 +458,7 @@ function decode(d) {
   EPOCH = Date.parse(d.meta.epoch + "T00:00:00Z");
   const key = new Map();
   for (let i = 0; i < n; i++) key.set(L.src[i] + ":" + L.sid[i], i);
+  if (!L.rn) L.rn = new Array(n).fill(-1);    // payloads from before renovation was collected
   const last = new Float64Array(n), firstOrigin = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     last[i] = L.sn[i] ? S.v[L.so[i] + L.sn[i] - 1] : NaN;
@@ -479,10 +497,12 @@ function matcher({ deal = state.deal, ignorePrice = false, ignoreDistricts = fal
   const srcCode = state.source === "all" ? null : DATA.dict.source.indexOf(state.source);
   const dset = !ignoreDistricts && state.districts.length ? new Set(state.districts.map(d => DATA.dict.district.indexOf(d))) : null;
   const { pmin, pmax, amin, amax } = state;
+  const rn = state.renov === "yes" ? 1 : state.renov === "no" ? 0 : null;
   return i => L.deal[i] === dealCode
     && (b === null || L.b[i] === b)
     && (!rooms.size || rooms.has(roomBucket(L.r[i])))
     && (srcCode === null || L.src[i] === srcCode)
+    && (rn === null || L.rn[i] === rn)
     && (!dset || dset.has(L.di[i]))
     && (amin == null || L.a[i] >= amin) && (amax == null || L.a[i] <= amax)
     && (ignorePrice || ((pmin == null || last[i] >= pmin) && (pmax == null || last[i] <= pmax)));
@@ -880,7 +900,58 @@ function renderTrendPrice() {
 }
 
 // ---------- map ----------
-let map = null, layer = null, tiles = null, tileDark = null;
+let map = null, layer = null, tiles = null, tileDark = null, heat = null;
+
+// A smooth price surface: every pixel blends the nearby places' values (inverse-distance
+// weighting, places with more listings count more) and fades out where there is no data.
+// Unlike a density heatmap, the colour shows the chosen measure, not how many ads there are.
+function makeHeatLayer() {
+  return L.Layer.extend({
+    pts: [], color: null,
+    setData(pts, color) { this.pts = pts; this.color = color; this.redraw(); return this; },
+    onAdd(m) {
+      this.canvas = L.DomUtil.create("canvas", "heat-canvas leaflet-zoom-hide");
+      m.getPanes().overlayPane.appendChild(this.canvas);
+      m.on("moveend zoomend resize", this.redraw, this);
+      this.redraw();
+    },
+    onRemove(m) { this.canvas.remove(); m.off("moveend zoomend resize", this.redraw, this); },
+    redraw() {
+      if (!this._map || !this.canvas) return;
+      const m = this._map, size = m.getSize(), cv = this.canvas;
+      L.DomUtil.setPosition(cv, m.containerPointToLayerPoint([0, 0]));
+      cv.width = size.x; cv.height = size.y;
+      const ctx = cv.getContext("2d");
+      if (!this.pts.length) return;
+      const cell = 6, gw = Math.ceil(size.x / cell), gh = Math.ceil(size.y / cell);
+      const metresPerCell = 156543.03 * Math.cos(40.4 * Math.PI / 180) / 2 ** m.getZoom() * cell;
+      const near = 1200 / metresPerCell, far = 3000 / metresPerCell;     // full colour within ~1.2 km, gone by ~3 km
+      const P = this.pts.map(p => { const c = m.latLngToContainerPoint([p.lat, p.lng]); return { x: c.x / cell, y: c.y / cell, v: p.v, w: Math.sqrt(p.n) }; });
+      const img = ctx.createImageData(gw, gh), px = img.data;
+      for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+        let num = 0, den = 0, dmin = Infinity;
+        for (const p of P) {
+          const dx = p.x - gx, dy = p.y - gy, d2 = dx * dx + dy * dy;
+          if (d2 < dmin) dmin = d2;
+          const w = p.w / (d2 + .5);
+          num += w * p.v; den += w;
+        }
+        const d = Math.sqrt(dmin);
+        if (d > far) continue;
+        const a = d <= near ? 1 : 1 - (d - near) / (far - near);
+        const [r, g, b] = this.color(num / den), k = (gy * gw + gx) * 4;
+        px[k] = r; px[k + 1] = g; px[k + 2] = b; px[k + 3] = Math.round(a * .82 * 255);
+      }
+      const off = document.createElement("canvas");
+      off.width = gw; off.height = gh;
+      off.getContext("2d").putImageData(img, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(off, 0, 0, gw * cell, gh * cell);
+    },
+  });
+}
+const rgb = hex => hex.replace("#", "").match(/../g).map(x => parseInt(x, 16));
 function darkMode() {
   const t = document.documentElement.dataset.theme;
   return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
@@ -888,6 +959,7 @@ function darkMode() {
 function ensureMap() {
   if (map || typeof L === "undefined") return;
   map = L.map("map", { scrollWheelZoom: false, zoomSnap: .5 }).setView([40.41, 49.88], 11);
+  heat = new (makeHeatLayer())().addTo(map);
   layer = L.layerGroup().addTo(map);
 }
 function setTiles() {
@@ -928,13 +1000,21 @@ function renderMap() {
   const vals = pts.map(M.val).filter(v => v != null).sort((a, b) => a - b);
   let lo = q(vals, .05) ?? 0, hi = q(vals, .95) ?? 1;
   if (M.diverging) { const e = Math.max(Math.abs(lo), Math.abs(hi), 1); lo = -e; hi = e; }
-  const c0 = cssv("--seq-0"), c1 = cssv("--seq-1"), up = cssv("--up"), down = cssv("--down"), mid = cssv("--neutral");
+  // heat palettes: cool = low / falling, hot = high / rising
+  const SEQ = ["#2c7bb6", "#00a6ca", "#00ccbc", "#90eb9d", "#ffff8c", "#f9d057", "#f29e2e", "#e76818", "#d7191c"];
+  const DIV = ["#1a9850", "#66bd63", "#a6d96a", "#f4f1c0", "#fdae61", "#f46d43", "#d73027"];
+  const ramp = (stops, f) => {
+    const x = Math.min(1, Math.max(0, f)) * (stops.length - 1), k = Math.min(stops.length - 2, Math.floor(x));
+    return mix(stops[k], stops[k + 1], x - k);
+  };
   const color = v => {
     if (v == null) return cssv("--line");
-    if (M.diverging) return v >= 0 ? mix(mid, up, Math.min(1, v / hi)) : mix(mid, down, Math.min(1, v / lo));
-    return mix(c0, c1, hi > lo ? Math.min(1, Math.max(0, (v - lo) / (hi - lo))) : .5);
+    if (M.diverging) return ramp(DIV, (v - lo) / (hi - lo));
+    return ramp(SEQ, hi > lo ? (v - lo) / (hi - lo) : .5);
   };
   layer.clearLayers();
+  const heatMode = state.mapstyle === "heat";
+  heat.setData(heatMode ? pts.filter(p => M.val(p) != null).map(p => ({ lat: p.lat, lng: p.lng, n: p.n, v: M.val(p) })) : [], v => rgb(color(v)));
   const maxN = Math.max(1, ...pts.map(p => p.n));
   for (const p of [...pts].sort((a, b) => b.n - a.n)) {
     const v = M.val(p);
@@ -945,12 +1025,16 @@ function renderMap() {
       + `<span class="k">Cut price in 30 days:</span> ${p.cuts == null ? "–" : nf0.format(p.cuts) + "%"}`
       + (p.yield != null ? `<br><span class="k">Gross yield:</span> ${nf1.format(p.yield)}%` : "")
       + (p.kind === "district" ? `<br><button class="linkbtn" data-district="${esc(p.name)}">Show only ${esc(p.name)}</button>` : "") + "</div>";
-    L.circleMarker([p.lat, p.lng], { radius: 5 + 20 * Math.sqrt(p.n / maxN), color: cssv("--surface"), weight: 1.2, fillColor: color(v), fillOpacity: v == null ? .55 : .88 })
+    const size = heatMode ? 2.5 + 4 * Math.sqrt(p.n / maxN) : 5 + 20 * Math.sqrt(p.n / maxN);
+    L.circleMarker([p.lat, p.lng], { radius: size, color: heatMode ? cssv("--ink") : cssv("--surface"), weight: heatMode ? .8 : 1.2,
+        fillColor: color(v), fillOpacity: v == null ? .55 : heatMode ? 1 : .88 })
       .bindPopup(html).bindTooltip(`${p.name}: ${M.fmt(v)}`, { direction: "top" }).addTo(layer);
   }
   document.getElementById("scale-title").textContent = M.title;
-  document.getElementById("scale").style.background = M.diverging
-    ? `linear-gradient(90deg, ${down}, ${mid}, ${up})` : `linear-gradient(90deg, ${c0}, ${c1})`;
+  document.getElementById("map-sub").textContent = heatMode
+    ? "Colour blends the values of nearby metro stations, settlements and districts, and fades out where there are no listings. Dots mark the places; hover or select one for details."
+    : "Each bubble is a metro station, settlement or district. Size shows listings online now.";
+  document.getElementById("scale").style.background = `linear-gradient(90deg, ${(M.diverging ? DIV : SEQ).join(", ")})`;
   document.getElementById("scale-lo").textContent = vals.length ? M.fmt(lo) : "";
   document.getElementById("scale-hi").textContent = vals.length ? M.fmt(hi) : "";
   const unplaced = R.current.filter(i => X.L.pl[i] < 0).length;
@@ -1194,6 +1278,7 @@ function checkListing(raw) {
       <dl>
         <dt>Flat</dt><dd>${esc(describe(i))}${L.b[i] >= 0 ? `, ${L.b[i] === 0 ? "new" : "old"} build` : ""}</dd>
         <dt>Per m²</dt><dd>${rentFmt(ppm2)}</dd>
+        <dt>Renovation</dt><dd>${L.rn[i] === 1 ? "renovated" : L.rn[i] === 0 ? "not renovated" : "not stated"}</dd>
         <dt>Similar flats</dt><dd>${cm == null ? "too few to compare" : `${rentFmt(cm)} median of ${nf0.format(comp.length)} <span class="${signCls(diff)}">(${pct(diff)})</span>`}</dd>
         <dt>Since first seen</dt><dd><span class="${signCls(change(last[i], firstP))}">${pct(change(last[i], firstP))}</span> from ${money(firstP)} on ${fmtDayY(hist[0].t)}${hist[0].o ? " (archive.org)" : ""}</dd>
         <dt>Status</dt><dd>${L.on[i] ? `online, seen ${today - L.t1[i] <= 1 ? "today" : fmtDayY(L.t1[i])}` : `last seen ${fmtDayY(L.t1[i])}`}</dd>
@@ -1214,6 +1299,7 @@ function checkListing(raw) {
 function syncControls() {
   document.querySelectorAll(".seg").forEach(g => {
     const k = g.dataset.key, v = k === "gran" ? granularity() : state[k];
+    if (v === undefined) return;
     g.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(
       g.hasAttribute("data-multi") ? (b.dataset.v === "all" ? !v.length : v.includes(b.dataset.v)) : b.dataset.v === v)));
   });
@@ -1225,7 +1311,11 @@ function syncControls() {
   const ds = state.districts;
   document.getElementById("dd-district-label").textContent = !ds.length ? "All districts" : ds.length <= 2 ? ds.join(", ") : `${ds.length} districts`;
   document.querySelectorAll("#dd-district-menu input").forEach(c => c.checked = ds.includes(c.value));
-  const extra = ["districts", "pmin", "pmax", "amin", "amax"].filter(k => Array.isArray(state[k]) ? state[k].length : state[k] != null).length + (state.source !== "all");
+  const extra = ["districts", "pmin", "pmax", "amin", "amax"].filter(k => Array.isArray(state[k]) ? state[k].length : state[k] != null).length + (state.source !== "all") + (state.renov !== "all");
+  // how many listings online in this deal say whether they're renovated
+  let known = 0, online = 0;
+  for (let i = 0; i < X.n; i++) if (X.L.on[i] && X.L.deal[i] === (state.deal === "sale" ? 0 : 1)) { online++; if (X.L.rn[i] >= 0) known++; }
+  document.getElementById("renov-hint").textContent = online ? `Known for ${nf0.format(known / online * 100)}% of listings online; the rest only show under Any.` : "";
   document.getElementById("more").innerHTML = `More filters${extra ? `<span class="count">${extra}</span>` : ""}`;
 }
 
@@ -1264,6 +1354,8 @@ function readHash() {
   if (!PERIODS[s.period]) s.period = DEFAULT.period;
   if (!["auto", "day", "week", "month"].includes(s.gran)) s.gran = DEFAULT.gran;
   if (!["price", "change"].includes(s.tview)) s.tview = DEFAULT.tview;
+  if (!["all", "yes", "no"].includes(s.renov)) s.renov = DEFAULT.renov;
+  if (!["heat", "bubbles"].includes(s.mapstyle)) s.mapstyle = DEFAULT.mapstyle;
   return s;
 }
 
@@ -1300,7 +1392,7 @@ function wire() {
     const mv = e.target.closest(".movers li[data-lat]");
     if (mv && map) map.setView([+mv.dataset.lat, +mv.dataset.lng], 13);
   });
-  document.getElementById("reset").addEventListener("click", () => { state = { ...DEFAULT, rooms: [], districts: [], metric: state.metric, gran: state.gran, tview: state.tview }; render(); });
+  document.getElementById("reset").addEventListener("click", () => { state = { ...DEFAULT, rooms: [], districts: [], metric: state.metric, gran: state.gran, tview: state.tview, mapstyle: state.mapstyle }; render(); });
   document.getElementById("share").addEventListener("click", async e => {
     try { await navigator.clipboard.writeText(location.href); e.target.textContent = "Link copied"; }
     catch { e.target.textContent = "Copy the address bar"; }
@@ -1365,7 +1457,7 @@ async function load() {
   state = readHash();
   wire();
   // a shared link with district, price, area or source filters opens the panel that shows them
-  if (state.districts.length || state.source !== "all" || ["pmin", "pmax", "amin", "amax"].some(k => state[k] != null)) document.getElementById("more").click();
+  if (state.districts.length || state.source !== "all" || state.renov !== "all" || ["pmin", "pmax", "amin", "amax"].some(k => state[k] != null)) document.getElementById("more").click();
   render();
   setInterval(poll, POLL_MS);
   document.addEventListener("visibilitychange", poll);

@@ -55,6 +55,8 @@ def _from_json(item: dict) -> dict:
     out["in_baku"] = (item.get("city") or {}).get("slug") == "baki"
     out["deal"] = "rent" if item.get("isLeased") else "sale"
     out["daily"] = bool(item.get("isPaidDaily"))
+    if item.get("hasRepair") is not None:
+        out["renovated"] = bool(item["hasRepair"])
     names = [x.get("fullName") for x in item.get("nearestLocations") or []]
     names.append((item.get("location") or {}).get("fullName"))
     _location(names, out)
@@ -91,6 +93,8 @@ def _from_html(html: str) -> dict:
         out["floor"], out["floors_total"] = int(m.group(1)), int(m.group(2))
     if (a := after("Sahə")) and (m := re.match(r"([\d.,]+)\s*m", a)):
         out["area_m2"] = float(m.group(1).replace(",", "."))
+    if (rep := after("Təmir")) in ("var", "yoxdur"):
+        out["renovated"] = rep == "var"
     if (r := after("Otaq sayı")) and r.isdigit():
         out["rooms"] = int(r)
     for i, x in enumerate(lines[:-1]):

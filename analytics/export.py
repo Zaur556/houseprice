@@ -163,6 +163,8 @@ def build(engine) -> dict:
             "t0": [int(x) for x in (L.first_seen - EPOCH).dt.days],
             "t1": [int(x) for x in (L.last_seen - EPOCH).dt.days],
             "on": [1 if x else 0 for x in current],
+            "rn": [1 if x is True else 0 if x is False else -1 for x in
+                   (L.renovated if "renovated" in L else [None] * len(L))],
             "gone": [1 if (not a) and pd.notna(d) else 0 for a, d in zip(L.is_active, L.delisted_at)],
             "so": [int(so.get(i, 0)) for i in L.index], "sn": [int(sn.get(i, 0)) for i in L.index],
         },

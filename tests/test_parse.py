@@ -66,3 +66,10 @@ def test_yeniemlak_card_height_first_floor():
     assert r["price_azn"] == 120000 and r["rooms"] == 2 and r["area_m2"] == 40
     assert (r["floor"], r["floors_total"]) == (3, 5)
     assert r["building"] == "old" and r["district"] == "Nərimanov" and r["metro"] == "Nəriman Nərimanov"
+
+
+def test_renovation_from_ad_text():
+    assert parse_card("120000 AZN 60 m2 Əla təmirli, mebelli")["renovated"] is True
+    assert parse_card("120000 AZN 60 m2 Avro təmir olunub")["renovated"] is True
+    assert parse_card("90000 AZN 40 m2 təmirsiz, öz zövqünüzə təmir edə bilərsiniz")["renovated"] is False
+    assert "renovated" not in parse_card("120000 AZN 60 m2 Nəsimi r.")
