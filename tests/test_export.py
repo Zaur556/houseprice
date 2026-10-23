@@ -72,3 +72,23 @@ def test_enrichment_survives_rescrape(tmp_path):
     with engine.connect() as c:
         row = c.execute(db.listings.select().where(db.listings.c.id == "bina:7")).one()
     assert row.district == "Yasamal" and row.district_inferred is False and row.enriched_at is not None
+
+
+def test_backfill_queue_survives_index_outage(tmp_path, monkeypatch):
+    from tools import backfill_archive as bf
+    engine = db.get_engine(f"sqlite:///{tmp_path / 'q.db'}")
+    cdx = tmp_path / "cdx.json"
+    cdx.write_text(json.dumps([["timestamp", "original"],
+                               ["20250301000000", "https://bina.az/items/1"],
+                               ["20250315000000", "https://bina.az/items/1"],     # same ad, same month: one copy
+                               ["20250401000000", "https://bina.az/items/1"],
+                               ["20260601000000", "https://bina.az/items/2"],
+                               ["20260601000000", "https://bina.az/"]]))
+    assert bf.seed(engine, str(cdx)) == 3
+    assert bf.seed(engine, str(cdx)) == 0                                      # idempotent
+
+    def down(*a, **k):
+        raise bf.IndexDown("503")
+    monkeypatch.setattr(bf, "cdx_month", down)
+    monkeypatch.setattr(bf.time, "sleep", lambda s: None)
+    assert bf.candidates(None, 24, log=lambda *a: None) == []                  # gives up after 3 months

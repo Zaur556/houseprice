@@ -11,10 +11,16 @@ or monthly rent) becomes a snapshot with origin="archive", dated when it was arc
 gives a real price history, and ads still online today join up with the live scrape.
 
 Copies already processed are recorded in archive_fetches, so the job can be stopped
-and rerun. Archived copies are a sample of what was online (a few hundred a month),
+and rerun. The list of archived pages from archive.org's CDX index is saved in
+archive_queue, so a rerun still has work when that index is down (it often returns 503).
+Pages are read newest first, so recent months fill in before older ones.
+
+    python -m tools.backfill_archive --index skip         # use only the saved list
+    python -m tools.backfill_archive --seed cdx.json      # add a saved CDX JSON export to the list Archived copies are a sample of what was online (a few hundred a month),
 not a full sweep, and the dashboard says so.
 """
 import argparse
+import json
 import re
 import sys
 import threading
@@ -52,30 +58,65 @@ class Pace:
             self.next = max(self.next, time.monotonic() + seconds)
 
 
-def cdx_month(s: requests.Session, start: datetime, end: datetime, log=print) -> list[tuple[str, str]]:
-    """(timestamp, url) for archived ad pages between two dates; splits the range if CDX times out."""
+class IndexDown(Exception):
+    pass
+
+
+def cdx_month(s: requests.Session, start: datetime, end: datetime, log=print, split=True) -> list[tuple[str, str]]:
+    """(timestamp, url) for archived ad pages between two dates; splits the range once if CDX times out."""
     params = {"url": "bina.az/items/*", "output": "json", "fl": "timestamp,original",
               "filter": ["statuscode:200", "mimetype:text/html"],
               "from": start.strftime("%Y%m%d"), "to": (end - timedelta(days=1)).strftime("%Y%m%d")}
-    for attempt in range(3):
+    for attempt in range(2):
         try:
-            r = s.get(CDX, params=params, timeout=120)
+            r = s.get(CDX, params=params, timeout=90)
             if r.ok:
                 rows = r.json()
                 return [(t, u) for t, u in rows[1:]] if rows else []
         except (requests.RequestException, ValueError):
             pass
         time.sleep(10 * (attempt + 1))
-    if (end - start).days > 3:
+    if split and (end - start).days > 10:
         mid = start + (end - start) / 2
         mid = datetime(mid.year, mid.month, mid.day)
-        return cdx_month(s, start, mid, log) + cdx_month(s, mid, end, log)
-    log(f"  CDX failed for {start:%Y-%m-%d}..{end:%Y-%m-%d}, skipping")
-    return []
+        return cdx_month(s, start, mid, log, False) + cdx_month(s, mid, end, log, False)
+    raise IndexDown(f"{start:%Y-%m-%d}..{end:%Y-%m-%d}")
+
+
+def pick(rows, picked: dict) -> int:
+    """Keep one copy per ad per calendar month. Returns how many were added."""
+    n = 0
+    for ts, url in rows:
+        m = ID_RE.search(url.split("?")[0])
+        if m and (m.group(1), ts[:6]) not in picked:
+            picked[(m.group(1), ts[:6])] = (f"{ts} {url}"[:120], ts, url)
+            n += 1
+    return n
+
+
+def save_queue(engine, items) -> int:
+    """Add (key, ts, url) items to archive_queue; returns how many were new."""
+    with engine.begin() as c:
+        have = {r.key for r in c.execute(select(db.archive_queue.c.key))}
+        new = [{"key": k, "ts": ts, "url": u} for k, ts, u in items if k not in have]
+        for i in range(0, len(new), 1000):
+            c.execute(insert(db.archive_queue), new[i:i + 1000])
+    return len(new)
+
+
+def seed(engine, path: str) -> int:
+    """Load a CDX JSON export (rows of [timestamp, original, ...]) into the queue."""
+    rows = json.loads(open(path, encoding="utf-8").read())
+    if rows and rows[0] and rows[0][0] == "timestamp":
+        rows = rows[1:]
+    picked = {}
+    pick([(r[0], r[1]) for r in rows if "/items/" in r[1]], picked)
+    return save_queue(engine, picked.values())
 
 
 def candidates(s, months: int, log=print) -> list[tuple[str, str, str]]:
-    """One copy per ad per calendar month: (key, timestamp, url)."""
+    """One copy per ad per calendar month from the CDX index: (key, timestamp, url).
+    Stops early when the index looks down, returning what it got."""
     today = db.utcnow()
     first = datetime(today.year, today.month, 1)
     starts = []
@@ -84,17 +125,20 @@ def candidates(s, months: int, log=print) -> list[tuple[str, str, str]]:
         while m <= 0:
             y, m = y - 1, m + 12
         starts.append(datetime(y, m, 1))
-    picked = {}
-    for a in starts:
+    picked, failures = {}, 0
+    for a in reversed(starts):                      # newest months first
         b = datetime(a.year + (a.month == 12), a.month % 12 + 1, 1)
-        rows = cdx_month(s, a, min(b, today + timedelta(days=1)), log)
-        n = 0
-        for ts, url in rows:
-            m = ID_RE.search(url.split("?")[0])
-            if m and (m.group(1), ts[:6]) not in picked:
-                picked[(m.group(1), ts[:6])] = (f"{ts} {url}"[:120], ts, url)
-                n += 1
-        log(f"  {a:%Y-%m}: {len(rows)} archived ad pages, {n} distinct ads")
+        try:
+            rows = cdx_month(s, a, min(b, today + timedelta(days=1)), log)
+        except IndexDown as e:
+            failures += 1
+            log(f"  {a:%Y-%m}: CDX index unavailable ({e})")
+            if failures >= 3:
+                log("  CDX index looks down; carrying on with the saved list of archived pages")
+                break
+            continue
+        failures = 0
+        log(f"  {a:%Y-%m}: {len(rows)} archived ad pages, {pick(rows, picked)} distinct ads")
     return list(picked.values())
 
 
@@ -121,17 +165,25 @@ def main(argv=None) -> int:
     # long back-offs and ends up slower (3 workers at 0.7 s managed ~2 pages a minute).
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--interval", type=float, default=4.5, help="seconds between requests, all workers")
+    ap.add_argument("--index", choices=["auto", "skip"], default="auto",
+                    help="auto: refresh the page list from archive.org's CDX index first; skip: saved list only")
+    ap.add_argument("--seed", help="CDX JSON export to add to the saved page list")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
 
     engine = db.get_engine()
     s = requests.Session()
     s.headers.update(UA)
-    todo = candidates(s, args.months)
+    if args.seed:
+        print(f"backfill: {seed(engine, args.seed)} pages added to the saved list from {args.seed}")
+    if args.index == "auto":
+        print(f"backfill: {save_queue(engine, candidates(s, args.months))} new pages found in the CDX index")
+    oldest = (db.utcnow() - timedelta(days=31 * args.months)).strftime("%Y%m")
     with engine.connect() as c:
         done = {r.key for r in c.execute(select(db.archive_fetches.c.key))}
-    todo = [t for t in todo if t[0] not in done]
-    todo.sort(key=lambda t: t[1])
+        queue = [(r.key, r.ts, r.url) for r in c.execute(select(db.archive_queue))]
+    todo = [q for q in queue if q[0] not in done and q[1][:6] >= oldest]
+    todo.sort(key=lambda q: q[1], reverse=True)     # newest first: recent months matter most
     if args.limit:
         todo = todo[:args.limit]
     print(f"backfill: {len(todo)} archived pages to read ({len(done)} done in earlier runs)")

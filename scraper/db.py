@@ -48,6 +48,15 @@ snapshots = Table(
     Index("ix_snap_listing_time", "listing_id", "observed_at"),
 )
 
+# Archived ad pages known to exist (from archive.org's CDX index), saved so the backfill
+# can keep working when that index is down.
+archive_queue = Table(
+    "archive_queue", metadata,
+    Column("key", String(120), primary_key=True),         # "<timestamp> <url>", same as archive_fetches
+    Column("ts", String(14), nullable=False),
+    Column("url", Text, nullable=False),
+)
+
 # Archived pages already processed by tools.backfill_archive, so reruns resume.
 archive_fetches = Table(
     "archive_fetches", metadata,

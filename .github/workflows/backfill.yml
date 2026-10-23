@@ -12,6 +12,11 @@ on:
       limit:
         description: "Max pages this run (0 = all)"
         default: "0"
+      index:
+        description: "skip = use the saved page list; auto = first refresh it from archive.org's CDX index (slow when that index is down)"
+        default: "skip"
+        type: choice
+        options: [skip, auto]
 
 permissions:
   contents: read
@@ -35,7 +40,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Import archived ads
-        run: python -m tools.backfill_archive --months "${{ inputs.months }}" --limit "${{ inputs.limit }}"
+        run: python -m tools.backfill_archive --months "${{ inputs.months }}" --limit "${{ inputs.limit }}" --index "${{ inputs.index }}"
         timeout-minutes: 320
         continue-on-error: true      # publish what was imported even if the run hit the time limit
       - name: Publish dashboard data
