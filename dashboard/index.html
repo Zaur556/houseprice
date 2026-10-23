@@ -125,6 +125,18 @@ h1{font-size:22px; font-weight:600; margin:0; letter-spacing:-.01em}
 .movers{list-style:none; margin:0 0 14px; padding:0; font-size:14px}
 .movers li{display:flex; justify-content:space-between; gap:8px; padding:5px 0; border-bottom:1px solid var(--line); cursor:pointer}
 .movers li:last-child{border-bottom:0}
+.check-row{display:flex; gap:6px; align-items:center; font-size:13px; color:var(--ink-2); margin-top:10px; cursor:pointer}
+.cx-key{display:inline-block; width:10px; height:10px; background:var(--surface); border:2px solid var(--ink); transform:rotate(45deg); margin-left:2px}
+.cx-marker{width:12px; height:12px; background:var(--surface); border:2.5px solid var(--ink); transform:rotate(45deg); box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.search{padding:7px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface-2); min-width:220px}
+#cx-panel .chips{margin:4px 0 12px}
+#cx-detail .verdict{margin-top:16px; padding-top:14px; border-top:1px solid var(--line)}
+#t-cx tr.sel td{background:var(--accent-soft)}
+.cx-wrap{max-height:480px; overflow:auto}
+.cx-wrap thead th{position:sticky; top:0; background:var(--surface); z-index:1}
+#t-cx td{max-width:200px; overflow:hidden; text-overflow:ellipsis}
+#t-cx td:first-child{max-width:260px}
+.muted{color:var(--ink-2)}
 .movers .nm{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .scale{height:10px; border-radius:5px; margin:6px 0 4px}
 .scale-labels{display:flex; justify-content:space-between; font-size:12px; color:var(--ink-2)}
@@ -326,8 +338,27 @@ footer p{margin:0 0 8px}
           <ul class="movers" id="movers-up"></ul>
           <h3>Biggest falls over the period</h3>
           <ul class="movers" id="movers-down"></ul>
+          <label class="check-row"><input type="checkbox" id="cx-on-map" checked> Show new-build complexes <span class="cx-key"></span></label>
         </div>
       </div>
+    </section>
+
+    <section class="panel wide" id="cx-panel">
+      <div class="panel-head">
+        <div>
+          <h2>New-build complexes</h2>
+          <p class="sub">Developers’ own “from” prices per m² on bina.az (the cheapest layout in the complex), compared with resale asking prices for new-build flats in the same district.</p>
+        </div>
+        <div class="row">
+          <input type="search" class="search" id="cx-search" placeholder="Search complex or developer" aria-label="Search complexes">
+          <label class="check-row"><input type="checkbox" id="cx-gone"> Include complexes no longer listed</label>
+        </div>
+      </div>
+      <div class="chips" id="cx-chips"></div>
+      <div class="table-wrap cx-wrap"><table id="t-cx"></table></div>
+      <p class="empty" id="cx-empty" hidden></p>
+      <div id="cx-detail"></div>
+      <p class="legend-note">Prices before today come from archive.org copies of bina.az (late 2024 to mid 2026), so change figures for a period start from the nearest earlier copy. “vs resale” compares the developer’s from-price with the median asking price per m² of new-build flats for sale in the same district.</p>
     </section>
 
     <div class="grid">
@@ -712,6 +743,7 @@ function render() {
   renderHero();
   renderTrend();
   renderMap();
+  renderComplexes();
   renderDistrictBar();
   renderDistrictTrend();
   renderDistrictTable();
@@ -900,7 +932,7 @@ function renderTrendPrice() {
 }
 
 // ---------- map ----------
-let map = null, layer = null, tiles = null, tileDark = null, heat = null;
+let map = null, layer = null, tiles = null, tileDark = null, heat = null, cxLayer = null;
 
 // A smooth price surface: every pixel blends the nearby places' values (inverse-distance
 // weighting, places with more listings count more) and fades out where there is no data.
@@ -961,6 +993,7 @@ function ensureMap() {
   map = L.map("map", { scrollWheelZoom: false, zoomSnap: .5 }).setView([40.41, 49.88], 11);
   heat = new (makeHeatLayer())().addTo(map);
   layer = L.layerGroup().addTo(map);
+  cxLayer = L.layerGroup().addTo(map);
 }
 function setTiles() {
   const dark = darkMode();
@@ -1042,10 +1075,126 @@ function renderMap() {
   document.getElementById("map-note").textContent = `${nf0.format(pts.length)} places with 3 or more listings.`
     + (blank ? ` Grey: ${nf0.format(blank)} without enough data for this measure${state.metric === "change" ? " (too few ads at the start of the period)" : ""}.` : "")
     + (unplaced ? ` ${nf0.format(unplaced)} listings name no known place and aren’t on the map.` : "");
+  drawComplexMarkers();
   const movers = R.places.filter(p => p.change != null && p.thenN >= 5);
   const li = p => `<li data-lat="${p.lat}" data-lng="${p.lng}"><span class="nm">${esc(p.name)}</span><span class="${signCls(p.change)}">${pct(p.change)}</span></li>`;
   document.getElementById("movers-up").innerHTML = movers.filter(p => p.change > 0).sort((a, b) => b.change - a.change).slice(0, 5).map(li).join("") || '<li class="k">Not enough history yet</li>';
   document.getElementById("movers-down").innerHTML = movers.filter(p => p.change < 0).sort((a, b) => a.change - b.change).slice(0, 5).map(li).join("") || '<li class="k">Not enough history yet</li>';
+}
+
+// ---------- new-build complexes ----------
+let cxSort = "now", cxDir = -1, cxOpen = null;
+const READY = [[/^\s*t[əe]hvil verilib\.?\s*$/i, "Completed"], [/t[əe]hvil verilib/gi, "completed"], [/(\d)-[a-zçşıüö]{1,3} kvartal[ıi]?/gi, "Q$1"], [/-c[iıuü] il(in)?/gi, ""], [/kvartal/gi, "quarter"], [/sonu/gi, "end"], [/ortas[ıi]/gi, "mid"], [/blokları/gi, "blocks"], [/bloku/gi, "block"], [/(^|\s)və(\s)/g, "$1and$2"]];
+const readyText = s => { if (!s) return "–"; if (READY[0][0].test(s)) return "Completed"; let x = s; for (const [re, to] of READY.slice(1)) x = x.replace(re, to); return x.trim(); };
+const cxAt = (c, day) => { let v = null; for (const [d, p] of c.hist) { if (d <= day) v = { d, p }; else break; } return v; };
+
+// median asking price per m² of new-build flats for sale online now, by district (the resale yardstick)
+function resaleNewByDistrict() {
+  const { L, last, n } = X, by = new Map();
+  for (let i = 0; i < n; i++) if (L.on[i] && L.deal[i] === 0 && L.b[i] === 0 && L.di[i] >= 0) {
+    const d = DATA.dict.district[L.di[i]];
+    (by.get(d) || by.set(d, []).get(d)).push(last[i] / L.a[i]);
+  }
+  return new Map([...by].map(([d, v]) => [d, median(v, 5)]));
+}
+
+function complexRows() {
+  const all = DATA.complexes || [];
+  const qs = document.getElementById("cx-search").value.trim().toLowerCase();
+  const gone = document.getElementById("cx-gone").checked;
+  const resale = resaleNewByDistrict(), start = R.start, grace = Math.max(45, Math.round(PERIODS[state.period] / 4));
+  const sel = new Set(state.districts);
+  return all.filter(c => (gone || c.live) && (!sel.size || sel.has(c.district))
+      && (!qs || `${c.name} ${c.dev || ""} ${c.district || ""} ${c.metro || ""}`.toLowerCase().includes(qs)))
+    .map(c => {
+      const now = c.hist[c.hist.length - 1];
+      let then = cxAt(c, start);
+      if (!then) { const f = c.hist.find(([d]) => d > start && d <= start + grace); if (f) then = { d: f[0], p: f[1] }; }
+      const rs = c.district ? resale.get(c.district) : null;
+      return { ...c, now: now[1], nowDay: now[0], then: then && then.d < now[0] ? then : null,
+        change: then && then.d < now[0] ? change(now[1], then.p) : null, resale: rs, premium: rs ? change(now[1], rs) : null };
+    });
+}
+
+function renderComplexes() {
+  const panel = document.getElementById("cx-panel");
+  panel.hidden = !(DATA.complexes || []).length;
+  if (panel.hidden) return;
+  const empty = document.getElementById("cx-empty"), table = document.getElementById("t-cx");
+  const why = state.deal === "rent" ? "Developer prices are sale prices. Switch to For sale to compare complexes."
+    : state.building === "old" ? "Complexes are new builds. Switch the building filter to All or New build." : "";
+  if (why) { empty.textContent = why; empty.hidden = false; table.innerHTML = ""; document.getElementById("cx-chips").innerHTML = ""; document.getElementById("cx-detail").innerHTML = ""; return; }
+  const rows = complexRows();
+  const sorted = [...rows].sort((a, b) => {
+    const x = a[cxSort], y = b[cxSort];
+    if (x == null) return 1; if (y == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y, "az") : x - y) * cxDir;
+  });
+  empty.hidden = !!rows.length;
+  empty.textContent = rows.length ? "" : "No complexes match. Clear the search or the district filter.";
+  const med = median(rows.map(r => r.now), 3), chg = median(rows.filter(r => r.change != null).map(r => r.change), 3);
+  const prem = median(rows.filter(r => r.premium != null).map(r => r.premium), 3);
+  document.getElementById("cx-chips").innerHTML = [
+    `${nf0.format(rows.length)} complexes`,
+    `Median from-price ${perM2(med)}/m²`,
+    chg == null ? "" : `<b class="${signCls(chg)}">${pct(chg)}</b> median change in ${periodText()}`,
+    prem == null ? "" : `<b class="${signCls(prem)}">${pct(prem)}</b> vs resale new builds`,
+  ].filter(Boolean).map(s => `<span class="chip">${s}</span>`).join("");
+  const cols = [
+    { k: "name", t: "Complex", f: r => `<button class="rowlink" data-cx="${esc(r.slug)}">${esc(r.name)}</button>${r.live ? "" : ' <span class="note">no longer listed</span>'}` },
+    { k: "dev", t: "Developer", f: r => esc(r.dev || "–") },
+    { k: "district", t: "Location", f: r => esc([r.district, r.metro].filter(Boolean).join(" · ") || "–") },
+    { k: "deadline", t: "Ready", f: r => `<span title="${esc(r.deadline || "")}">${esc(readyText(r.deadline))}</span>` },
+    { k: "now", t: "From, ₼/m²", f: r => nf0.format(r.now) },
+    { k: "change", t: `Change, ${periodText()}`, f: r => r.change == null ? '<span class="muted">–</span>' : `<span class="${signCls(r.change)}" title="since ${fmtDayY(r.then.d)}: ${nf0.format(r.then.p)} ₼">${pct(r.change)}</span>` },
+    { k: "premium", t: "vs resale", f: r => r.premium == null ? '<span class="muted">–</span>' : `<span title="resale new builds in ${esc(r.district)}: ${nf0.format(r.resale)} ₼/m²">${pct(r.premium)}</span>` },
+    { k: "min", t: "Price range", f: r => r.min ? `${nf0.format(r.min / 1000)}k–${r.max ? nf0.format(r.max / 1000) + "k" : "…"} ₼` : "–" },
+    { k: "apts", t: "Flats", f: r => r.apts ? nf0.format(r.apts) : "–" },
+  ];
+  table.innerHTML = `<thead><tr>${cols.map(c => `<th ${c.k === cxSort ? `aria-sort="${cxDir > 0 ? "ascending" : "descending"}"` : ""}><button data-cxk="${c.k}">${c.t}${c.k === cxSort ? (cxDir > 0 ? " ↑" : " ↓") : ""}</button></th>`).join("")}</tr></thead>`
+    + `<tbody>${sorted.map(r => `<tr class="${r.slug === cxOpen ? "sel" : ""}">${cols.map(c => `<td>${c.f(r)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+  renderComplexDetail(rows.find(r => r.slug === cxOpen));
+}
+
+function renderComplexDetail(c) {
+  const box = document.getElementById("cx-detail");
+  if (!c) { box.innerHTML = ""; return; }
+  const lay = [...c.layouts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  box.innerHTML = `<div class="verdict"><div>
+      <p class="big">${esc(c.name)}</p>
+      <dl>
+        <dt>Developer</dt><dd>${esc(c.dev || "–")}</dd>
+        <dt>Location</dt><dd>${esc([c.district && c.district + " district", c.metro && c.metro + " metro"].filter(Boolean).join(", ") || "–")}</dd>
+        <dt>Ready</dt><dd>${esc(readyText(c.deadline))}${c.deadline && readyText(c.deadline) !== c.deadline ? ` <span class="muted">(${esc(c.deadline)})</span>` : ""}</dd>
+        <dt>From</dt><dd>${nf0.format(c.now)} ₼/m²${c.resale ? ` <span class="muted">(resale new builds nearby: ${nf0.format(c.resale)} ₼/m²)</span>` : ""}</dd>
+        <dt>Size</dt><dd>${[c.apts && nf0.format(c.apts) + " flats", c.floors && "up to " + c.floors + " floors"].filter(Boolean).join(", ") || "–"}</dd>
+      </dl>
+      <p><a href="https://bina.az/yasayis-kompleksleri/${esc(c.slug)}" target="_blank" rel="noopener">Open on bina.az</a> · <button class="linkbtn" id="cx-close">Close</button></p>
+      ${lay.length ? `<div class="table-wrap"><table><thead><tr><th>Rooms</th><th>Area</th><th>₼/m²</th><th>About</th><th>Finish</th></tr></thead><tbody>${lay.map(([r, a, pm, f]) =>
+        `<tr><td>${r || "–"}</td><td>${nf1.format(a)} m²</td><td>${nf0.format(pm)}</td><td>${money(a * pm)}</td><td>${esc(f)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    </div><div><div class="chart"><canvas id="c-cx"></canvas></div></div></div>`;
+  const pts = c.hist;
+  const ds = [{ label: "Developer from-price", data: pts.map(([d, v]) => ({ x: d, y: v })), stepped: true, borderColor: cssv("--accent"), backgroundColor: cssv("--accent"),
+    pointRadius: 4, pointStyle: pts.map(h => h[2] ? "rectRot" : "circle") }];
+  if (c.resale) ds.push({ label: `Resale new builds, ${c.district}, now`, data: [{ x: pts[0][0], y: c.resale }, { x: X.today, y: c.resale }], borderColor: cssv("--sand"), borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0 });
+  mk("c-cx", { type: "line", data: { datasets: ds },
+    options: { parsing: true, plugins: { legend: { position: "bottom" }, tooltip: { callbacks: {
+        title: items => fmtDayY(items[0].parsed.x), label: c2 => `${c2.dataset.label}: ${nf0.format(c2.parsed.y)} ₼/m²${c2.datasetIndex === 0 && pts[c2.dataIndex][2] ? " (archive.org copy)" : ""}` } } },
+      scales: { x: { type: "linear", ticks: { callback: v => fmtMonth(v), maxTicksLimit: 6, maxRotation: 0 } }, y: { ticks: { callback: v => nf0.format(v) + " ₼" } } } } });
+}
+
+function drawComplexMarkers() {
+  if (!cxLayer) return;
+  cxLayer.clearLayers();
+  const on = document.getElementById("cx-on-map").checked && state.deal === "sale" && state.building !== "old";
+  if (!on) return;
+  for (const c of complexRows()) {
+    if (c.lat == null || c.lng == null) continue;
+    L.marker([c.lat, c.lng], { icon: L.divIcon({ className: "", html: '<div class="cx-marker"></div>', iconSize: [12, 12], iconAnchor: [6, 6] }), keyboard: false })
+      .bindTooltip(`<b>${esc(c.name)}</b><br>from ${nf0.format(c.now)} ₼/m²${c.change != null ? ` · ${pct(c.change)} in ${periodText()}` : ""}`, { direction: "top" })
+      .on("click", () => { cxOpen = c.slug; renderComplexes(); document.getElementById("cx-panel").scrollIntoView({ behavior: "smooth" }); })
+      .addTo(cxLayer);
+  }
 }
 
 function renderDistrictBar() {
@@ -1400,6 +1549,16 @@ function wire() {
   });
   document.getElementById("map-metric").addEventListener("change", e => { state.metric = e.target.value; renderMap(); writeHash(); });
   document.getElementById("csv").addEventListener("click", downloadCsv);
+  document.getElementById("cx-search").addEventListener("input", () => { renderComplexes(); drawComplexMarkers(); });
+  document.getElementById("cx-gone").addEventListener("change", () => { renderComplexes(); drawComplexMarkers(); });
+  document.getElementById("cx-on-map").addEventListener("change", drawComplexMarkers);
+  document.getElementById("t-cx").addEventListener("click", e => {
+    const h = e.target.closest("[data-cxk]");
+    if (h) { const k = h.dataset.cxk; if (cxSort === k) cxDir *= -1; else { cxSort = k; cxDir = ["name", "dev", "district", "deadline"].includes(k) ? 1 : -1; } renderComplexes(); return; }
+    const b = e.target.closest("[data-cx]");
+    if (b) { cxOpen = cxOpen === b.dataset.cx ? null : b.dataset.cx; renderComplexes(); }
+  });
+  document.getElementById("cx-detail").addEventListener("click", e => { if (e.target.id === "cx-close") { cxOpen = null; renderComplexes(); } });
   document.getElementById("check-form").addEventListener("submit", e => { e.preventDefault(); checkListing(document.getElementById("check-url").value); });
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
   window.addEventListener("hashchange", () => { state = readHash(); render(); });

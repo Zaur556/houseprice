@@ -1,7 +1,7 @@
 """Storage: listings (one row per ad), price_snapshots (one row per price change), scrape_runs."""
 import base64
 import gzip
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import (Boolean, Column, DateTime, Float, Index, Integer, MetaData, String, Table, Text,
                         bindparam, case, create_engine, func, insert, inspect, select, text, update)
@@ -49,6 +49,42 @@ snapshots = Table(
     Column("price_azn", Float),
     Column("origin", String(8), default="live"),          # live (our scrape) | archive (archive.org copy)
     Index("ix_snap_listing_time", "listing_id", "observed_at"),
+)
+
+# New-build residential complexes on bina.az and the developers' own prices.
+complexes = Table(
+    "complexes", metadata,
+    Column("slug", String(120), primary_key=True),        # from /yasayis-kompleksleri/<slug>
+    Column("bina_id", String(16)),
+    Column("name", Text),
+    Column("developer", Text),
+    Column("city", String(40)),
+    Column("district", String(40)),
+    Column("metro", String(40)),
+    Column("address", Text),
+    Column("deadline", String(40)),                       # completion, as the developer writes it
+    Column("lat", Float),
+    Column("lng", Float),
+    Column("apartments", Integer),
+    Column("buildings", Integer),
+    Column("floors", Integer),
+    Column("hits", Integer),                              # page views on bina.az
+    Column("layouts", Text),                              # JSON: [{rooms, area, per_sqm, finish}]
+    Column("first_seen", DateTime, nullable=False),
+    Column("last_seen", DateTime, nullable=False),
+    Column("detail_at", DateTime),                        # complex page last read
+)
+
+# One row per change of a complex's "from" price per m² (live) or per archived copy (archive).
+complex_prices = Table(
+    "complex_prices", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("slug", String(120), nullable=False, index=True),
+    Column("observed_at", DateTime, nullable=False),
+    Column("per_sqm", Float),
+    Column("min_total", Float),
+    Column("max_total", Float),
+    Column("origin", String(8), default="live"),
 )
 
 # Archived ad pages known to exist (from archive.org's CDX index), saved so the backfill
@@ -284,6 +320,49 @@ def latest_export(engine) -> str | None:
             return row.payload
         data = c.execute(select(parts.c.data).where(parts.c.export_id == row.id).order_by(parts.c.part))
         return "".join(gzip.decompress(base64.b64decode(d)).decode("utf-8") for (d,) in data)
+
+
+COMPLEX_FIELDS = ("bina_id", "name", "developer", "city", "district", "metro", "address", "deadline", "lat", "lng",
+                  "apartments", "buildings", "floors", "hits")
+
+
+def save_complex(engine, c: dict, observed_at: datetime | None = None, origin: str = "live", detail: bool = False) -> bool:
+    """Upsert one complex and record its price. Live: a row when the price differs from the
+    latest one. Archive: one row per archived copy (per day). Returns True if a price row was added."""
+    now = observed_at or utcnow()
+    import json as _json
+    with engine.begin() as cx:
+        row = cx.execute(select(complexes.c.first_seen, complexes.c.last_seen).where(complexes.c.slug == c["slug"])).first()
+        vals = {k: c[k] for k in COMPLEX_FIELDS if c.get(k) not in (None, "")}
+        if c.get("layouts"):
+            vals["layouts"] = _json.dumps(c["layouts"], ensure_ascii=False)
+        if detail and origin == "live":
+            vals["detail_at"] = now
+        if row is None:
+            vals.setdefault("name", c["slug"].replace("-", " ").title())
+            cx.execute(insert(complexes).values(slug=c["slug"], first_seen=now, last_seen=now, **vals))
+        else:
+            if origin == "archive":      # an old copy must not overwrite what the live site says now
+                vals = {k: v for k, v in vals.items() if k in ("lat", "lng")}
+            cx.execute(update(complexes).where(complexes.c.slug == c["slug"]).values(
+                first_seen=min(row.first_seen, now), last_seen=max(row.last_seen, now), **vals))
+        if not c.get("per_sqm"):
+            return False
+        P = complex_prices
+        if origin == "archive":
+            day = now.replace(hour=0, minute=0, second=0)
+            same = cx.execute(select(func.count()).select_from(P).where(
+                P.c.slug == c["slug"], P.c.observed_at >= day, P.c.observed_at < day + timedelta(days=1))).scalar_one()
+            if same:
+                return False
+        else:
+            last = cx.execute(select(P.c.per_sqm, P.c.min_total).where(P.c.slug == c["slug"])
+                              .order_by(P.c.observed_at.desc()).limit(1)).first()
+            if last and last.per_sqm == c["per_sqm"] and (c.get("min_total") is None or last.min_total == c["min_total"]):
+                return False
+        cx.execute(insert(P).values(slug=c["slug"], observed_at=now, per_sqm=c["per_sqm"], min_total=c.get("min_total"),
+                                    max_total=c.get("max_total"), origin=origin))
+        return True
 
 
 def mark_delisted(engine, section: str, run_started: datetime, found: int) -> int:

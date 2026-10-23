@@ -9,6 +9,7 @@ GitHub Actions (cron, every 6 h)
   └─ scraper.run        bina.az (headless Chromium) + yeniemlak.az (HTTP)
        └─ Neon Postgres  listings · price_snapshots · scrape_runs
   └─ scraper.enrich     reads bina.az ad pages for listings whose card named no district
+  └─ scraper.complexes  residential complexes list (+ each complex page every 3 days)
   └─ analytics.export   cleaned listings + price histories → Neon table dashboard_exports
 
 GitHub Actions (manual, once)
@@ -47,6 +48,10 @@ descriptions, phone numbers or exact coordinates). The browser computes all stat
   over the period, share of price cuts, gross yield or listing count, with the biggest risers and fallers
 - Check a listing: paste an ad link to see its price history and how it compares with similar flats
 - CSV download of the district table
+- New-build complexes: the developers' own "from" price per m² for every complex on bina.az's
+  *yaşayış kompleksləri* section, its change over the period, how it compares with resale new-build
+  prices in the same district, layouts with prices and finish, and price history back to late 2024
+  (from archive.org copies). Complexes also appear as diamonds on the price map.
 
 ## Two years of history
 

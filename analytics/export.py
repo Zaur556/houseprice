@@ -16,6 +16,7 @@ Cleaning done here, once:
 """
 import argparse
 import json
+import re
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -110,6 +111,51 @@ def _ints(s, missing=-1):
     return [int(v) if pd.notna(v) else missing for v in s]
 
 
+def build_complexes(engine, now) -> list:
+    """Baku residential complexes with their developer price history (day, per m², archive flag)."""
+    try:
+        C = pd.read_sql_table("complexes", engine)
+        P = pd.read_sql_table("complex_prices", engine)
+    except ValueError:                       # tables not created yet
+        return []
+    if C.empty:
+        return []
+    C = C[C.city.isna() | (C.city == "Bakı")]
+    P["observed_at"] = pd.to_datetime(P.observed_at)
+    P = P.sort_values("observed_at")
+    hist = {slug: [[int((r.observed_at - EPOCH).days), round(float(r.per_sqm)), 1 if r.origin == "archive" else 0]
+                   for r in g.itertuples() if pd.notna(r.per_sqm)]
+            for slug, g in P.groupby("slug")}
+    latest = P.groupby("slug").last()
+    out = []
+    for c in C.itertuples():
+        h = hist.get(c.slug) or []
+        if not h:
+            continue
+        district = c.district if isinstance(c.district, str) else None
+        if not district and isinstance(c.address, str) and (m := re.search(r"([\wƏəÖöÜüĞğİıŞşÇç]+) r\.", c.address)):
+            district = m.group(1)
+        lay = []
+        if isinstance(c.layouts, str):
+            for a in json.loads(c.layouts):
+                if a.get("per_sqm"):
+                    lay.append([a.get("rooms") or 0, a.get("area") or 0, a.get("per_sqm"), a.get("finish") or ""])
+        lt = latest.loc[c.slug] if c.slug in latest.index else None
+        out.append({
+            "slug": c.slug, "name": (c.name or c.slug).strip(), "dev": c.developer if isinstance(c.developer, str) else None,
+            "district": district, "metro": c.metro if isinstance(c.metro, str) else None,
+            "lat": None if pd.isna(c.lat) else round(float(c.lat), 5), "lng": None if pd.isna(c.lng) else round(float(c.lng), 5),
+            "deadline": c.deadline if isinstance(c.deadline, str) else None,
+            "apts": None if pd.isna(c.apartments) else int(c.apartments),
+            "floors": None if pd.isna(c.floors) else int(c.floors),
+            "live": bool(pd.notna(c.last_seen) and pd.Timestamp(c.last_seen) >= now - timedelta(days=CURRENT_DAYS)),
+            "min": None if lt is None or pd.isna(lt.min_total) else round(float(lt.min_total)),
+            "max": None if lt is None or pd.isna(lt.max_total) else round(float(lt.max_total)),
+            "layouts": lay, "hist": h,
+        })
+    return out
+
+
 def build(engine) -> dict:
     L, S, R = load(engine)
     demo = bool((R.source == "demo").any()) if len(R) else False
@@ -181,6 +227,7 @@ def build(engine) -> dict:
                         "last_status": last.status, "last_error": last.error if isinstance(last.error, str) else None,
                         "active": int(((L.source == src) & current).sum())})
     data["sources"] = sources
+    data["complexes"] = build_complexes(engine, now)
     return data
 
 

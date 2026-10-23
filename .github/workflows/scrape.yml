@@ -44,6 +44,11 @@ jobs:
       - name: Fill in districts from ad pages
         run: python -m scraper.enrich
         continue-on-error: true
+      - name: New-build complexes (developer prices)
+        run: |
+          python -m scraper.complexes
+          python -m tools.backfill_complexes      # archived prices; only new copies after the first run
+        continue-on-error: true
       - name: Publish dashboard data
         run: python -m analytics.export --no-file
       - name: Summary
