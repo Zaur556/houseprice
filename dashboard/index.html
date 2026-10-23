@@ -261,8 +261,16 @@ footer p{margin:0 0 8px}
     </section>
 
     <section class="panel wide">
-      <h2>Price per m² over time</h2>
-      <p class="sub" id="trend-sub">Median of listings online in each period, the middle half of listings as a band, and a mix-adjusted line that holds the district mix fixed.</p>
+      <div class="panel-head">
+        <div>
+          <h2>Price per m² over time</h2>
+          <p class="sub" id="trend-sub">Median of listings online in each period, the middle half of listings as a band, and a mix-adjusted line that holds the district mix fixed.</p>
+        </div>
+        <div class="seg" role="group" aria-label="Chart steps" data-key="gran">
+          <button data-v="week" aria-pressed="false">Weekly</button>
+          <button data-v="month" aria-pressed="false">Monthly</button>
+        </div>
+      </div>
       <div class="chart tall"><canvas id="c-trend"></canvas></div>
       <p class="legend-note" id="trend-note"></p>
     </section>
@@ -383,7 +391,7 @@ footer p{margin:0 0 8px}
 "use strict";
 // ---------- state ----------
 const PERIODS = { "3m": 91, "6m": 182, "1y": 365, "2y": 730 };
-const DEFAULT = { deal: "sale", building: "all", rooms: [], period: "1y", source: "all", districts: [], pmin: null, pmax: null, amin: null, amax: null, metric: "ppm2" };
+const DEFAULT = { deal: "sale", building: "all", rooms: [], period: "1y", gran: "auto", source: "all", districts: [], pmin: null, pmax: null, amin: null, amax: null, metric: "ppm2" };
 let state = { ...DEFAULT, rooms: [], districts: [] };
 let DATA = null, X = null;            // raw payload, decoded columns
 let exportId = null, live = false;
@@ -408,6 +416,7 @@ let EPOCH = Date.UTC(2024, 0, 1);
 const dayDate = d => new Date(EPOCH + d * 864e5);
 const fmtDay = d => dayDate(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
 const fmtDayY = d => dayDate(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const fmtDayShortY = d => dayDate(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" });
 const fmtMonth = d => dayDate(d).toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
 
 // ---------- statistics ----------
@@ -469,10 +478,14 @@ function matcher({ deal = state.deal, ignorePrice = false, ignoreDistricts = fal
     && (ignorePrice || ((pmin == null || last[i] >= pmin) && (pmax == null || last[i] <= pmax)));
 }
 
-function buckets(start, today) {
+// chart steps: the Weekly/Monthly toggle, or automatic (weekly up to 6 months, monthly beyond)
+const granularity = () => state.gran === "week" || state.gran === "month" ? state.gran : PERIODS[state.period] <= 182 ? "week" : "month";
+
+function buckets(start, today, gran = granularity()) {
   const out = [];
-  if (today - start <= 190) {                // weekly
-    for (let be = today; be > start; be -= 7) out.unshift({ bs: be - 6, be, label: fmtDay(be) });
+  if (gran === "week") {
+    const fmt = today - start > 300 ? fmtDayShortY : fmtDay;   // add the year when weeks span more than ~10 months
+    for (let be = today; be > start; be -= 7) out.unshift({ bs: be - 6, be, label: fmt(be) });
   } else {                                    // calendar months
     const s = dayDate(start), e = dayDate(today);
     for (let y = s.getUTCFullYear(), m = s.getUTCMonth(); y < e.getUTCFullYear() || (y === e.getUTCFullYear() && m <= e.getUTCMonth()); m === 11 ? (y++, m = 0) : m++) {
@@ -536,7 +549,7 @@ function compute() {
   const P = PERIODS[state.period], start = today - P;
 
   const rows = series(base, buckets(start, today));
-  const recent = series(base, buckets(today - 34, today), false);
+  const recent = series(base, buckets(today - 34, today, "week"), false);
   const cur = current.map(ppm2), cs = sorted(cur);
   const inCurrent = new Set(current);
   const liveSince = DATA.meta.live_since ?? today;
@@ -768,7 +781,7 @@ function renderTrend() {
       scales: { y: { ticks: { callback: v => perM2(v) } }, x: { ticks: { maxTicksLimit: narrow() ? 5 : 12, maxRotation: 0 } } }
     }
   });
-  const weekly = PERIODS[state.period] <= 182;
+  const weekly = granularity() === "week";
   const arch = t.filter(r => r.archive > .5 && r.n);
   const gaps = t.filter(r => r.median == null).length;
   document.getElementById("trend-sub").textContent = `${weekly ? "Weekly" : "Monthly"} median of listings online, the middle half of listings as a band, and a mix-adjusted line that holds the district mix fixed.`;
@@ -1083,7 +1096,7 @@ function checkListing(raw) {
 // ---------- controls & URL ----------
 function syncControls() {
   document.querySelectorAll(".seg").forEach(g => {
-    const k = g.dataset.key, v = state[k];
+    const k = g.dataset.key, v = k === "gran" ? granularity() : state[k];
     g.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(
       g.hasAttribute("data-multi") ? (b.dataset.v === "all" ? !v.length : v.includes(b.dataset.v)) : b.dataset.v === v)));
   });
@@ -1132,6 +1145,7 @@ function readHash() {
     else s[k] = v;
   }
   if (!PERIODS[s.period]) s.period = DEFAULT.period;
+  if (!["auto", "week", "month"].includes(s.gran)) s.gran = DEFAULT.gran;
   return s;
 }
 
@@ -1168,7 +1182,7 @@ function wire() {
     const mv = e.target.closest(".movers li[data-lat]");
     if (mv && map) map.setView([+mv.dataset.lat, +mv.dataset.lng], 13);
   });
-  document.getElementById("reset").addEventListener("click", () => { state = { ...DEFAULT, rooms: [], districts: [], metric: state.metric }; render(); });
+  document.getElementById("reset").addEventListener("click", () => { state = { ...DEFAULT, rooms: [], districts: [], metric: state.metric, gran: state.gran }; render(); });
   document.getElementById("share").addEventListener("click", async e => {
     try { await navigator.clipboard.writeText(location.href); e.target.textContent = "Link copied"; }
     catch { e.target.textContent = "Copy the address bar"; }
